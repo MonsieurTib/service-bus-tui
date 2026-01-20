@@ -15,6 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
+	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus/admin"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicebus/armservicebus"
 )
 
@@ -27,8 +28,9 @@ const (
 )
 
 type ServiceBusClient struct {
-	client    *azservicebus.Client
-	namespace string
+	client      *azservicebus.Client
+	adminClient *admin.Client
+	namespace   string
 }
 
 type NamespaceInfo struct {
@@ -95,9 +97,15 @@ func newServiceBusClientWithCredential(cred azcore.TokenCredential, namespace st
 		return nil, fmt.Errorf("failed to create service bus client: %w", err)
 	}
 
+	adminClient, err := admin.NewClient(fqdn, cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create admin client: %w", err)
+	}
+
 	return &ServiceBusClient{
-		client:    client,
-		namespace: namespace,
+		client:      client,
+		adminClient: adminClient,
+		namespace:   namespace,
 	}, nil
 }
 
@@ -249,4 +257,58 @@ func extractResourceGroup(resourceID string) string {
 		}
 	}
 	return "Unknown"
+}
+
+func (sbc *ServiceBusClient) ListTopics(ctx context.Context) ([]string, error) {
+	pager := sbc.adminClient.NewListTopicsPager(nil)
+	var topics []string
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list topics: %w", err)
+		}
+
+		for _, topic := range page.Topics {
+			topics = append(topics, topic.TopicName)
+		}
+	}
+
+	return topics, nil
+}
+
+func (sbc *ServiceBusClient) ListQueues(ctx context.Context) ([]string, error) {
+	pager := sbc.adminClient.NewListQueuesPager(nil)
+	var queues []string
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list queues: %w", err)
+		}
+
+		for _, queue := range page.Queues {
+			queues = append(queues, queue.QueueName)
+		}
+	}
+
+	return queues, nil
+}
+
+func (sbc *ServiceBusClient) ListSubscriptions(ctx context.Context, topicName string) ([]string, error) {
+	pager := sbc.adminClient.NewListSubscriptionsPager(topicName, nil)
+	var subscriptions []string
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list subscriptions for topic %s: %w", topicName, err)
+		}
+
+		for _, sub := range page.Subscriptions {
+			subscriptions = append(subscriptions, sub.SubscriptionName)
+		}
+	}
+
+	return subscriptions, nil
 }

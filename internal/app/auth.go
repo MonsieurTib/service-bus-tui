@@ -25,15 +25,17 @@ const (
 )
 
 type AuthModel struct {
-	selectedAuth        CredentialType
-	authOptions         []string
-	inNamespaceMode     bool
-	errMsg              string
-	isAuthenticating    bool
-	namespaces          []azure.NamespaceInfo
+	selectedAuth         CredentialType
+	authOptions          []string
+	inNamespaceMode      bool
+	errMsg               string
+	isAuthenticating     bool
+	namespaces           []azure.NamespaceInfo
 	selectedNamespaceIdx int
-	authenticatedUser   string
-	spinner             spinner.Model
+	authenticatedUser    string
+	spinner              spinner.Model
+	height               int
+	scrollOffset         int
 }
 
 func NewAuthModel() *AuthModel {
@@ -46,6 +48,8 @@ func NewAuthModel() *AuthModel {
 		},
 		selectedAuth: InteractiveBrowser,
 		spinner:      s,
+		height:       50,
+		scrollOffset: 0,
 	}
 
 	if user, ok := azure.GetAzureCliAuthenticatedUser(); ok {
@@ -78,6 +82,7 @@ func (m *AuthModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inNamespaceMode = false
 				m.namespaces = nil
 				m.errMsg = ""
+				m.scrollOffset = 0
 			}
 			return m, spinnerCmd
 		}
@@ -88,10 +93,14 @@ func (m *AuthModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAuthSelection(msg)
 		}
 
+	case tea.WindowSizeMsg:
+		m.height = max(msg.Height-5, 5)
+
 	case NamespacesLoadedMsg:
 		m.inNamespaceMode = true
 		m.namespaces = msg.Namespaces
 		m.selectedNamespaceIdx = 0
+		m.scrollOffset = 0
 		m.isAuthenticating = false
 		return m, spinnerCmd
 
@@ -116,7 +125,7 @@ func (m *AuthModel) updateNamespaceSelection(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		}
 	case "enter":
 		m.isAuthenticating = true
-		return m, m.connectWithNamespaceCmd(m.namespaces[m.selectedNamespaceIdx].FullyQualified)
+		return m, m.connectWithNamespaceCmd(m.namespaces[m.selectedNamespaceIdx].Name)
 	}
 	return m, m.spinner.Tick
 }
@@ -139,29 +148,31 @@ func (m *AuthModel) updateAuthSelection(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, m.spinner.Tick
 }
 
-
-
 func (m *AuthModel) View() string {
 	var s strings.Builder
 
-	s.WriteString(styles.Title.Render("Azure Service Bus TUI"))
-	s.WriteString("\n\n")
-
-	if m.inNamespaceMode {
-		m.viewNamespaceSelection(&s)
+	if m.isAuthenticating {
+		s.WriteString(m.spinner.View())
+		s.WriteString(" ")
+		s.WriteString(styles.Subtle.Render("Authenticating..."))
+		s.WriteString("\n")
 	} else {
-		m.viewAuthSelection(&s)
-	}
+		if m.inNamespaceMode {
+			m.viewNamespaceSelection(&s)
+		} else {
+			m.viewAuthSelection(&s)
+		}
 
-	if m.errMsg != "" {
+		if m.errMsg != "" {
+			s.WriteString("\n")
+			s.WriteString(styles.Error.Render("Error: " + m.errMsg))
+			s.WriteString("\n")
+		}
+
 		s.WriteString("\n")
-		s.WriteString(styles.Error.Render("Error: " + m.errMsg))
+		s.WriteString(styles.Subtle.Render("↑↓/jk: navigate | enter: select | esc: back | ctrl+c: quit"))
 		s.WriteString("\n")
 	}
-
-	s.WriteString("\n")
-	s.WriteString(styles.Subtle.Render("↑↓/jk: navigate | enter: select | esc: back | ctrl+c: quit"))
-	s.WriteString("\n")
 
 	return s.String()
 }
@@ -170,7 +181,22 @@ func (m *AuthModel) viewNamespaceSelection(s *strings.Builder) {
 	s.WriteString(styles.Subtle.Render("Select Namespace"))
 	s.WriteString("\n\n")
 
-	for i, ns := range m.namespaces {
+	maxLines := m.height
+
+	if m.selectedNamespaceIdx >= len(m.namespaces) {
+		m.selectedNamespaceIdx = len(m.namespaces) - 1
+	}
+
+	if m.selectedNamespaceIdx < m.scrollOffset {
+		m.scrollOffset = m.selectedNamespaceIdx
+	} else if m.selectedNamespaceIdx >= m.scrollOffset+maxLines {
+		m.scrollOffset = m.selectedNamespaceIdx - maxLines + 1
+	}
+
+	endIdx := min(m.scrollOffset+maxLines, len(m.namespaces))
+
+	for i := m.scrollOffset; i < endIdx; i++ {
+		ns := m.namespaces[i]
 		subID := ns.Subscription
 		if len(subID) > 8 {
 			subID = subID[:8]
@@ -242,12 +268,13 @@ func (m *AuthModel) authenticateAndListNamespacesCmd() tea.Cmd {
 
 func (m *AuthModel) connectWithNamespaceCmd(namespace string) tea.Cmd {
 	return func() tea.Msg {
+		var client *azure.ServiceBusClient
 		var err error
 
 		if m.selectedAuth == AzureCLI {
-			_, err = azure.NewServiceBusClientFromAzureCLI(namespace)
+			client, err = azure.NewServiceBusClientFromAzureCLI(namespace)
 		} else {
-			_, err = azure.NewServiceBusClientFromInteractiveBrowser(namespace)
+			client, err = azure.NewServiceBusClientFromInteractiveBrowser(namespace)
 		}
 
 		if err != nil {
@@ -255,6 +282,14 @@ func (m *AuthModel) connectWithNamespaceCmd(namespace string) tea.Cmd {
 		}
 
 		log.Printf("authenticated and connected to namespace: %s", namespace)
-		return tea.Quit()
+		return NamespaceConnectedMsg{
+			Namespace: namespace,
+			Client:    client,
+		}
 	}
+}
+
+type NamespaceConnectedMsg struct {
+	Namespace string
+	Client    *azure.ServiceBusClient
 }

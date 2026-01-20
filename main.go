@@ -14,7 +14,7 @@ func main() {
 	}
 	defer f.Close()
 
-	p := tea.NewProgram(app.NewAuthModel(), tea.WithAltScreen())
+	p := tea.NewProgram(app.NewRootModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("error running program: %v", err)
 	}
