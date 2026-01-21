@@ -8,15 +8,15 @@ type AppState int
 
 const (
 	StateAuth AppState = iota
-	StateExplorer
+	StateNamespace
 )
 
 type RootModel struct {
-	state         AppState
-	authModel     *AuthModel
-	explorerModel *ExplorerModel
-	windowWidth   int
-	windowHeight  int
+	state          AppState
+	authModel      *AuthModel
+	namespaceModel *NamespaceModel
+	windowWidth    int
+	windowHeight   int
 }
 
 func NewRootModel() *RootModel {
@@ -38,12 +38,12 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case NamespaceConnectedMsg:
-		m.explorerModel = NewExplorerModel(msg.Namespace, msg.Client)
-		m.state = StateExplorer
-		initCmd := m.explorerModel.Init()
+		m.namespaceModel = NewNamespaceModel(msg.Namespace, msg.Client)
+		m.state = StateNamespace
+		initCmd := m.namespaceModel.Init()
 		if m.windowWidth > 0 && m.windowHeight > 0 {
 			wsMsg := tea.WindowSizeMsg{Width: m.windowWidth, Height: m.windowHeight}
-			_, sizeCmd := m.explorerModel.Update(wsMsg)
+			_, sizeCmd := m.namespaceModel.Update(wsMsg)
 			return m, tea.Batch(initCmd, sizeCmd)
 		}
 		return m, initCmd
@@ -62,11 +62,11 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.authModel = authModel.(*AuthModel)
 		return m, cmd
 
-	case StateExplorer:
+	case StateNamespace:
 		var cmd tea.Cmd
-		var explorerModel tea.Model
-		explorerModel, cmd = m.explorerModel.Update(msg)
-		m.explorerModel = explorerModel.(*ExplorerModel)
+		var namespaceModel tea.Model
+		namespaceModel, cmd = m.namespaceModel.Update(msg)
+		m.namespaceModel = namespaceModel.(*NamespaceModel)
 		return m, cmd
 	}
 
@@ -77,8 +77,8 @@ func (m *RootModel) View() string {
 	switch m.state {
 	case StateAuth:
 		return m.authModel.View()
-	case StateExplorer:
-		return m.explorerModel.View()
+	case StateNamespace:
+		return m.namespaceModel.View()
 	}
 	return ""
 }

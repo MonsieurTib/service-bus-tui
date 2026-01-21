@@ -32,7 +32,7 @@ type TreeNode struct {
 	Depth       int
 }
 
-type ExplorerModel struct {
+type NamespaceModel struct {
 	namespace         string
 	client            *azure.ServiceBusClient
 	rootNodes         []*TreeNode
@@ -46,12 +46,12 @@ type ExplorerModel struct {
 	flatList          []*TreeNode
 }
 
-func NewExplorerModel(namespace string, client *azure.ServiceBusClient) *ExplorerModel {
+func NewNamespaceModel(namespace string, client *azure.ServiceBusClient) *NamespaceModel {
 	s := spinner.New()
 	s.Spinner = spinner.MiniDot
 	vp := viewport.New(0, 0)
 
-	return &ExplorerModel{
+	return &NamespaceModel{
 		namespace:         namespace,
 		client:            client,
 		subscriptionCache: make(map[string][]*TreeNode),
@@ -64,14 +64,14 @@ func NewExplorerModel(namespace string, client *azure.ServiceBusClient) *Explore
 	}
 }
 
-func (b *ExplorerModel) Init() tea.Cmd {
+func (b *NamespaceModel) Init() tea.Cmd {
 	return tea.Batch(
 		b.spinner.Tick,
 		b.loadTopicsAndQueuesCmd(),
 	)
 }
 
-func (b *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (b *NamespaceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var spinnerCmd tea.Cmd
 	b.spinner, spinnerCmd = b.spinner.Update(msg)
 
@@ -148,7 +148,7 @@ func (b *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return b, nil
 }
 
-func (b *ExplorerModel) anyNodeLoading() bool {
+func (b *NamespaceModel) anyNodeLoading() bool {
 	for _, node := range b.flatList {
 		if node.IsLoading {
 			return true
@@ -157,7 +157,7 @@ func (b *ExplorerModel) anyNodeLoading() bool {
 	return false
 }
 
-func (b *ExplorerModel) ensureSelectedVisible() {
+func (b *NamespaceModel) ensureSelectedVisible() {
 	if b.selectedIdx >= len(b.flatList) {
 		b.selectedIdx = len(b.flatList) - 1
 	}
@@ -179,7 +179,7 @@ func (b *ExplorerModel) ensureSelectedVisible() {
 	}
 }
 
-func (b *ExplorerModel) View() string {
+func (b *NamespaceModel) View() string {
 	var s strings.Builder
 
 	if b.isLoading {
@@ -223,7 +223,7 @@ func (b *ExplorerModel) View() string {
 	return s.String()
 }
 
-func (b *ExplorerModel) drawNodeLine(s *strings.Builder, node *TreeNode, isSelected bool) {
+func (b *NamespaceModel) drawNodeLine(s *strings.Builder, node *TreeNode, isSelected bool) {
 	indent := strings.Repeat("  ", node.Depth)
 
 	var icon string
@@ -270,11 +270,11 @@ func (b *ExplorerModel) drawNodeLine(s *strings.Builder, node *TreeNode, isSelec
 	s.WriteString("\n")
 }
 
-func (b *ExplorerModel) rebuildFlatList() {
+func (b *NamespaceModel) rebuildFlatList() {
 	b.flatList = b.buildFlatList()
 }
 
-func (b *ExplorerModel) buildFlatList() []*TreeNode {
+func (b *NamespaceModel) buildFlatList() []*TreeNode {
 	var flatList []*TreeNode
 
 	var traverse func(*TreeNode)
@@ -294,7 +294,7 @@ func (b *ExplorerModel) buildFlatList() []*TreeNode {
 	return flatList
 }
 
-func (b *ExplorerModel) findNodeByID(id string) *TreeNode {
+func (b *NamespaceModel) findNodeByID(id string) *TreeNode {
 	var search func(*TreeNode) *TreeNode
 	search = func(node *TreeNode) *TreeNode {
 		if node.ID == id {
@@ -316,7 +316,7 @@ func (b *ExplorerModel) findNodeByID(id string) *TreeNode {
 	return nil
 }
 
-func (b *ExplorerModel) handleExpandNode(node *TreeNode) tea.Cmd {
+func (b *NamespaceModel) handleExpandNode(node *TreeNode) tea.Cmd {
 	if node == nil || !node.HasChildren || node.IsExpanded {
 		return nil
 	}
@@ -342,7 +342,7 @@ func (b *ExplorerModel) handleExpandNode(node *TreeNode) tea.Cmd {
 	return nil
 }
 
-func (b *ExplorerModel) collapseNode(node *TreeNode) {
+func (b *NamespaceModel) collapseNode(node *TreeNode) {
 	if node == nil || !node.IsExpanded {
 		return
 	}
@@ -359,7 +359,7 @@ type SubscriptionsLoadedMsg struct {
 	Subscriptions []*TreeNode
 }
 
-func (b *ExplorerModel) loadTopicsAndQueuesCmd() tea.Cmd {
+func (b *NamespaceModel) loadTopicsAndQueuesCmd() tea.Cmd {
 	client := b.client
 
 	return func() tea.Msg {
@@ -404,7 +404,7 @@ func (b *ExplorerModel) loadTopicsAndQueuesCmd() tea.Cmd {
 	}
 }
 
-func (b *ExplorerModel) loadSubscriptionsCmd(topicID string) tea.Cmd {
+func (b *NamespaceModel) loadSubscriptionsCmd(topicID string) tea.Cmd {
 	client := b.client
 
 	return func() tea.Msg {
