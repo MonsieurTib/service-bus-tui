@@ -41,6 +41,17 @@ type NamespaceInfo struct {
 	Location       string
 }
 
+// MessageInfo I choose "MessageInfo" instead of "Message" to avoid confusion/conflict with azservicebus package
+type MessageInfo struct {
+	MessageID      string
+	SequenceNumber int64
+	Subject        string
+	Body           string
+	EnqueuedTime   time.Time
+	ContentType    string
+	Properties     map[string]any
+}
+
 func GetAzureCliAuthenticatedUser() (string, bool) {
 	_, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
@@ -311,4 +322,64 @@ func (sbc *ServiceBusClient) ListSubscriptions(ctx context.Context, topicName st
 	}
 
 	return subscriptions, nil
+}
+
+func (sbc *ServiceBusClient) PeekMessages(ctx context.Context, topicName, subscriptionName string, isDeadLetter bool, maxMessages int) ([]MessageInfo, error) {
+	var receiver *azservicebus.Receiver
+	var err error
+
+	if isDeadLetter {
+		receiver, err = sbc.client.NewReceiverForSubscription(
+			topicName,
+			subscriptionName,
+			&azservicebus.ReceiverOptions{
+				SubQueue: azservicebus.SubQueueDeadLetter,
+			},
+		)
+	} else {
+		receiver, err = sbc.client.NewReceiverForSubscription(
+			topicName,
+			subscriptionName,
+			nil,
+		)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create receiver: %w", err)
+	}
+	defer receiver.Close(ctx)
+
+	peekedMessages, err := receiver.PeekMessages(ctx, maxMessages, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to peek messages: %w", err)
+	}
+
+	var result []MessageInfo
+	for _, msg := range peekedMessages {
+		pm := MessageInfo{
+			SequenceNumber: *msg.SequenceNumber,
+			MessageID:      msg.MessageID,
+			Properties:     msg.ApplicationProperties,
+		}
+
+		if msg.Subject != nil {
+			pm.Subject = *msg.Subject
+		}
+
+		if msg.ContentType != nil {
+			pm.ContentType = *msg.ContentType
+		}
+
+		if msg.EnqueuedTime != nil {
+			pm.EnqueuedTime = *msg.EnqueuedTime
+		}
+
+		if msg.Body != nil {
+			pm.Body = string(msg.Body)
+		}
+
+		result = append(result, pm)
+	}
+
+	return result, nil
 }

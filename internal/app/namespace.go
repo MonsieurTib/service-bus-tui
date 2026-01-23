@@ -46,6 +46,21 @@ type NamespaceModel struct {
 	flatList          []*TreeNode
 }
 
+type TopicsAndQueuesLoadedMsg struct {
+	Nodes []*TreeNode
+}
+
+type SubscriptionsLoadedMsg struct {
+	TopicID       string
+	Subscriptions []*TreeNode
+}
+
+type SubscriptionMessagesSelectedMsg struct {
+	TopicName        string
+	SubscriptionName string
+	IsDeadLetter     bool
+}
+
 func NewNamespaceModel(namespace string, client *azure.ServiceBusClient) *NamespaceModel {
 	s := spinner.New()
 	s.Spinner = spinner.MiniDot
@@ -91,10 +106,16 @@ func (b *NamespaceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "right", "l", "enter":
 			if b.selectedIdx >= 0 && b.selectedIdx < len(b.flatList) {
 				node := b.flatList[b.selectedIdx]
-				cmd := b.handleExpandNode(node)
-				b.rebuildFlatList()
-				if cmd != nil {
-					return b, tea.Batch(b.spinner.Tick, cmd)
+				if node.Type == NodeTypeMessages {
+					if msg := b.createMessagesSelectedMsg(node); msg != nil {
+						return b, func() tea.Msg { return *msg }
+					}
+				} else {
+					cmd := b.handleExpandNode(node)
+					b.rebuildFlatList()
+					if cmd != nil {
+						return b, tea.Batch(b.spinner.Tick, cmd)
+					}
 				}
 			}
 		case "left", "h":
@@ -106,14 +127,8 @@ func (b *NamespaceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		padding := 3 // header + empty line before footer + footer
-		if b.errMsg != "" {
-			padding = 4 // header + error + empty line before footer + footer
-		}
-		viewportHeight := max(msg.Height-padding, 5)
-
 		b.viewport.Width = msg.Width
-		b.viewport.Height = viewportHeight
+		b.viewport.Height = max(msg.Height, 3)
 		b.viewport.YOffset = 0
 
 	case TopicsAndQueuesLoadedMsg:
@@ -192,28 +207,11 @@ func (b *NamespaceModel) View() string {
 		s.WriteString("\n")
 
 		if b.errMsg != "" {
-			s.WriteString(styles.Error.Render("✖ Error: " + b.errMsg))
+			s.WriteString(styles.Error.Render("Error: " + b.errMsg))
 			s.WriteString("\n")
 		}
 
-		if len(b.flatList) == 0 {
-			s.WriteString(styles.Subtle.Render("No topics or queues found"))
-			s.WriteString("\n")
-		} else {
-			startIdx := 0
-			endIdx := len(b.flatList)
-
-			if b.viewport.Height > 0 && len(b.flatList) > b.viewport.Height {
-				startIdx = max(b.viewport.YOffset, 0)
-				endIdx = min(startIdx+b.viewport.Height, len(b.flatList))
-			}
-
-			for i := startIdx; i < endIdx; i++ {
-				node := b.flatList[i]
-				isSelected := i == b.selectedIdx
-				b.drawNodeLine(&s, node, isSelected)
-			}
-		}
+		s.WriteString(b.ViewContent())
 
 		s.WriteString("\n")
 		s.WriteString(styles.Subtle.Render("↑↓/jk: navigate • →/l/enter: expand • ←/h: collapse • ctrl+c: quit"))
@@ -221,6 +219,43 @@ func (b *NamespaceModel) View() string {
 	}
 
 	return s.String()
+}
+
+func (b *NamespaceModel) ViewContent() string {
+	var s strings.Builder
+
+	if b.isLoading {
+		s.WriteString(b.spinner.View())
+		s.WriteString(" ")
+		s.WriteString(styles.Subtle.Render("Loading topics and queues..."))
+		return s.String()
+	}
+
+	if b.errMsg != "" {
+		s.WriteString(styles.Error.Render("Error: " + b.errMsg))
+		return s.String()
+	}
+
+	if len(b.flatList) == 0 {
+		s.WriteString(styles.Subtle.Render("No topics or queues found"))
+		return s.String()
+	}
+
+	startIdx := 0
+	endIdx := len(b.flatList)
+
+	if b.viewport.Height > 0 && len(b.flatList) > b.viewport.Height {
+		startIdx = max(b.viewport.YOffset, 0)
+		endIdx = min(startIdx+b.viewport.Height, len(b.flatList))
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		node := b.flatList[i]
+		isSelected := i == b.selectedIdx
+		b.drawNodeLine(&s, node, isSelected)
+	}
+
+	return strings.TrimSuffix(s.String(), "\n")
 }
 
 func (b *NamespaceModel) drawNodeLine(s *strings.Builder, node *TreeNode, isSelected bool) {
@@ -350,13 +385,46 @@ func (b *NamespaceModel) collapseNode(node *TreeNode) {
 	node.IsExpanded = false
 }
 
-type TopicsAndQueuesLoadedMsg struct {
-	Nodes []*TreeNode
-}
+// createMessagesSelectedMsg parses a messages node ID and creates the appropriate message.
+// Node IDs have format: "sub-{topicName}-{subscriptionName}-active" or "sub-{topicName}-{subscriptionName}-dlq"
+func (b *NamespaceModel) createMessagesSelectedMsg(node *TreeNode) *SubscriptionMessagesSelectedMsg {
+	if node == nil || node.Type != NodeTypeMessages {
+		return nil
+	}
 
-type SubscriptionsLoadedMsg struct {
-	TopicID       string
-	Subscriptions []*TreeNode
+	id := node.ID
+	if !strings.HasPrefix(id, "sub-") {
+		return nil
+	}
+
+	id = strings.TrimPrefix(id, "sub-")
+
+	var isDeadLetter bool
+	var topicAndSub string
+
+	if strings.HasSuffix(id, "-active") {
+		isDeadLetter = false
+		topicAndSub = strings.TrimSuffix(id, "-active")
+	} else if strings.HasSuffix(id, "-dlq") {
+		isDeadLetter = true
+		topicAndSub = strings.TrimSuffix(id, "-dlq")
+	} else {
+		return nil
+	}
+
+	lastHyphen := strings.LastIndex(topicAndSub, "-")
+	if lastHyphen == -1 {
+		return nil
+	}
+
+	topicName := topicAndSub[:lastHyphen]
+	subscriptionName := topicAndSub[lastHyphen+1:]
+
+	return &SubscriptionMessagesSelectedMsg{
+		TopicName:        topicName,
+		SubscriptionName: subscriptionName,
+		IsDeadLetter:     isDeadLetter,
+	}
 }
 
 func (b *NamespaceModel) loadTopicsAndQueuesCmd() tea.Cmd {
