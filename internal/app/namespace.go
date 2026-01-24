@@ -79,92 +79,92 @@ func NewNamespaceModel(namespace string, client *azure.ServiceBusClient) *Namesp
 	}
 }
 
-func (b *NamespaceModel) Init() tea.Cmd {
+func (n *NamespaceModel) Init() tea.Cmd {
 	return tea.Batch(
-		b.spinner.Tick,
-		b.loadTopicsAndQueuesCmd(),
+		n.spinner.Tick,
+		n.loadTopicsAndQueuesCmd(),
 	)
 }
 
-func (b *NamespaceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (n *NamespaceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var spinnerCmd tea.Cmd
-	b.spinner, spinnerCmd = b.spinner.Update(msg)
+	n.spinner, spinnerCmd = n.spinner.Update(msg)
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "up", "k":
-			if b.selectedIdx > 0 {
-				b.selectedIdx--
+			if n.selectedIdx > 0 {
+				n.selectedIdx--
 			}
-			b.ensureSelectedVisible()
+			n.ensureSelectedVisible()
 		case "down", "j":
-			if b.selectedIdx < len(b.flatList)-1 {
-				b.selectedIdx++
+			if n.selectedIdx < len(n.flatList)-1 {
+				n.selectedIdx++
 			}
-			b.ensureSelectedVisible()
+			n.ensureSelectedVisible()
 		case "right", "l", "enter":
-			if b.selectedIdx >= 0 && b.selectedIdx < len(b.flatList) {
-				node := b.flatList[b.selectedIdx]
+			if n.selectedIdx >= 0 && n.selectedIdx < len(n.flatList) {
+				node := n.flatList[n.selectedIdx]
 				if node.Type == NodeTypeMessages {
-					if msg := b.createMessagesSelectedMsg(node); msg != nil {
-						return b, func() tea.Msg { return *msg }
+					if msg := n.createMessagesSelectedMsg(node); msg != nil {
+						return n, func() tea.Msg { return *msg }
 					}
 				} else {
-					cmd := b.handleExpandNode(node)
-					b.rebuildFlatList()
+					cmd := n.handleExpandNode(node)
+					n.rebuildFlatList()
 					if cmd != nil {
-						return b, tea.Batch(b.spinner.Tick, cmd)
+						return n, tea.Batch(n.spinner.Tick, cmd)
 					}
 				}
 			}
 		case "left", "h":
-			if b.selectedIdx >= 0 && b.selectedIdx < len(b.flatList) {
-				node := b.flatList[b.selectedIdx]
-				b.collapseNode(node)
-				b.rebuildFlatList()
+			if n.selectedIdx >= 0 && n.selectedIdx < len(n.flatList) {
+				node := n.flatList[n.selectedIdx]
+				n.collapseNode(node)
+				n.rebuildFlatList()
 			}
 		}
 
 	case tea.WindowSizeMsg:
-		b.viewport.Width = msg.Width
-		b.viewport.Height = max(msg.Height, 3)
-		b.viewport.YOffset = 0
+		n.viewport.Width = msg.Width
+		n.viewport.Height = max(msg.Height, 3)
+		n.viewport.YOffset = 0
 
 	case TopicsAndQueuesLoadedMsg:
-		b.rootNodes = msg.Nodes
-		b.selectedIdx = 0
-		b.isLoading = false
-		b.rebuildFlatList()
-		b.viewport.YOffset = 0
+		n.rootNodes = msg.Nodes
+		n.selectedIdx = 0
+		n.isLoading = false
+		n.rebuildFlatList()
+		n.viewport.YOffset = 0
 
 	case SubscriptionsLoadedMsg:
-		b.cacheMutex.Lock()
-		b.subscriptionCache[msg.TopicID] = msg.Subscriptions
-		b.cacheMutex.Unlock()
+		n.cacheMutex.Lock()
+		n.subscriptionCache[msg.TopicID] = msg.Subscriptions
+		n.cacheMutex.Unlock()
 
-		if node := b.findNodeByID(msg.TopicID); node != nil {
+		if node := n.findNodeByID(msg.TopicID); node != nil {
 			node.Children = msg.Subscriptions
 			for _, child := range node.Children {
 				child.Depth = node.Depth + 1
 			}
 			node.IsLoading = false
 		}
-		b.rebuildFlatList()
+		n.rebuildFlatList()
 
 	case ErrorMsg:
-		b.errMsg = string(msg)
+		n.errMsg = string(msg)
 	}
 
-	if b.isLoading || b.anyNodeLoading() {
-		return b, spinnerCmd
+	if n.isLoading || n.anyNodeLoading() {
+		return n, spinnerCmd
 	}
 
-	return b, nil
+	return n, nil
 }
 
-func (b *NamespaceModel) anyNodeLoading() bool {
-	for _, node := range b.flatList {
+func (n *NamespaceModel) anyNodeLoading() bool {
+	for _, node := range n.flatList {
 		if node.IsLoading {
 			return true
 		}
@@ -172,46 +172,46 @@ func (b *NamespaceModel) anyNodeLoading() bool {
 	return false
 }
 
-func (b *NamespaceModel) ensureSelectedVisible() {
-	if b.selectedIdx >= len(b.flatList) {
-		b.selectedIdx = len(b.flatList) - 1
+func (n *NamespaceModel) ensureSelectedVisible() {
+	if n.selectedIdx >= len(n.flatList) {
+		n.selectedIdx = len(n.flatList) - 1
 	}
-	if b.selectedIdx < 0 {
-		b.selectedIdx = 0
+	if n.selectedIdx < 0 {
+		n.selectedIdx = 0
 	}
 
-	if b.viewport.Width == 0 || b.viewport.Height == 0 {
+	if n.viewport.Width == 0 || n.viewport.Height == 0 {
 		return
 	}
 
-	lineNum := b.selectedIdx
+	lineNum := n.selectedIdx
 
-	viewportHeight := b.viewport.Height
-	if lineNum < b.viewport.YOffset {
-		b.viewport.YOffset = lineNum
-	} else if lineNum >= b.viewport.YOffset+viewportHeight {
-		b.viewport.YOffset = lineNum - viewportHeight + 1
+	viewportHeight := n.viewport.Height
+	if lineNum < n.viewport.YOffset {
+		n.viewport.YOffset = lineNum
+	} else if lineNum >= n.viewport.YOffset+viewportHeight {
+		n.viewport.YOffset = lineNum - viewportHeight + 1
 	}
 }
 
-func (b *NamespaceModel) View() string {
+func (n *NamespaceModel) View() string {
 	var s strings.Builder
 
-	if b.isLoading {
-		s.WriteString(b.spinner.View())
+	if n.isLoading {
+		s.WriteString(n.spinner.View())
 		s.WriteString(" ")
 		s.WriteString(styles.Subtle.Render("Loading topics and queues..."))
 		s.WriteString("\n")
 	} else {
-		s.WriteString(styles.Subtle.Render("Namespace: " + b.namespace))
+		s.WriteString(styles.Subtle.Render("Namespace: " + n.namespace))
 		s.WriteString("\n")
 
-		if b.errMsg != "" {
-			s.WriteString(styles.Error.Render("Error: " + b.errMsg))
+		if n.errMsg != "" {
+			s.WriteString(styles.Error.Render("Error: " + n.errMsg))
 			s.WriteString("\n")
 		}
 
-		s.WriteString(b.ViewContent())
+		s.WriteString(n.ViewContent())
 
 		s.WriteString("\n")
 		s.WriteString(styles.Subtle.Render("↑↓/jk: navigate • →/l/enter: expand • ←/h: collapse • ctrl+c: quit"))
@@ -221,44 +221,44 @@ func (b *NamespaceModel) View() string {
 	return s.String()
 }
 
-func (b *NamespaceModel) ViewContent() string {
+func (n *NamespaceModel) ViewContent() string {
 	var s strings.Builder
 
-	if b.isLoading {
-		s.WriteString(b.spinner.View())
+	if n.isLoading {
+		s.WriteString(n.spinner.View())
 		s.WriteString(" ")
 		s.WriteString(styles.Subtle.Render("Loading topics and queues..."))
 		return s.String()
 	}
 
-	if b.errMsg != "" {
-		s.WriteString(styles.Error.Render("Error: " + b.errMsg))
+	if n.errMsg != "" {
+		s.WriteString(styles.Error.Render("Error: " + n.errMsg))
 		return s.String()
 	}
 
-	if len(b.flatList) == 0 {
+	if len(n.flatList) == 0 {
 		s.WriteString(styles.Subtle.Render("No topics or queues found"))
 		return s.String()
 	}
 
 	startIdx := 0
-	endIdx := len(b.flatList)
+	endIdx := len(n.flatList)
 
-	if b.viewport.Height > 0 && len(b.flatList) > b.viewport.Height {
-		startIdx = max(b.viewport.YOffset, 0)
-		endIdx = min(startIdx+b.viewport.Height, len(b.flatList))
+	if n.viewport.Height > 0 && len(n.flatList) > n.viewport.Height {
+		startIdx = max(n.viewport.YOffset, 0)
+		endIdx = min(startIdx+n.viewport.Height, len(n.flatList))
 	}
 
 	for i := startIdx; i < endIdx; i++ {
-		node := b.flatList[i]
-		isSelected := i == b.selectedIdx
-		b.drawNodeLine(&s, node, isSelected)
+		node := n.flatList[i]
+		isSelected := i == n.selectedIdx
+		n.drawNodeLine(&s, node, isSelected)
 	}
 
 	return strings.TrimSuffix(s.String(), "\n")
 }
 
-func (b *NamespaceModel) drawNodeLine(s *strings.Builder, node *TreeNode, isSelected bool) {
+func (n *NamespaceModel) drawNodeLine(s *strings.Builder, node *TreeNode, isSelected bool) {
 	indent := strings.Repeat("  ", node.Depth)
 
 	var icon string
@@ -291,7 +291,7 @@ func (b *NamespaceModel) drawNodeLine(s *strings.Builder, node *TreeNode, isSele
 	}
 
 	if node.IsLoading {
-		display += " " + b.spinner.View()
+		display += " " + n.spinner.View()
 	}
 
 	var line string
@@ -305,11 +305,11 @@ func (b *NamespaceModel) drawNodeLine(s *strings.Builder, node *TreeNode, isSele
 	s.WriteString("\n")
 }
 
-func (b *NamespaceModel) rebuildFlatList() {
-	b.flatList = b.buildFlatList()
+func (n *NamespaceModel) rebuildFlatList() {
+	n.flatList = n.buildFlatList()
 }
 
-func (b *NamespaceModel) buildFlatList() []*TreeNode {
+func (n *NamespaceModel) buildFlatList() []*TreeNode {
 	var flatList []*TreeNode
 
 	var traverse func(*TreeNode)
@@ -322,14 +322,14 @@ func (b *NamespaceModel) buildFlatList() []*TreeNode {
 		}
 	}
 
-	for _, node := range b.rootNodes {
+	for _, node := range n.rootNodes {
 		traverse(node)
 	}
 
 	return flatList
 }
 
-func (b *NamespaceModel) findNodeByID(id string) *TreeNode {
+func (n *NamespaceModel) findNodeByID(id string) *TreeNode {
 	var search func(*TreeNode) *TreeNode
 	search = func(node *TreeNode) *TreeNode {
 		if node.ID == id {
@@ -343,7 +343,7 @@ func (b *NamespaceModel) findNodeByID(id string) *TreeNode {
 		return nil
 	}
 
-	for _, node := range b.rootNodes {
+	for _, node := range n.rootNodes {
 		if result := search(node); result != nil {
 			return result
 		}
@@ -351,7 +351,7 @@ func (b *NamespaceModel) findNodeByID(id string) *TreeNode {
 	return nil
 }
 
-func (b *NamespaceModel) handleExpandNode(node *TreeNode) tea.Cmd {
+func (n *NamespaceModel) handleExpandNode(node *TreeNode) tea.Cmd {
 	if node == nil || !node.HasChildren || node.IsExpanded {
 		return nil
 	}
@@ -359,25 +359,25 @@ func (b *NamespaceModel) handleExpandNode(node *TreeNode) tea.Cmd {
 	node.IsExpanded = true
 
 	if node.Type == NodeTypeTopic && len(node.Children) == 0 {
-		b.cacheMutex.RLock()
-		if cached, ok := b.subscriptionCache[node.ID]; ok {
-			b.cacheMutex.RUnlock()
+		n.cacheMutex.RLock()
+		if cached, ok := n.subscriptionCache[node.ID]; ok {
+			n.cacheMutex.RUnlock()
 			node.Children = cached
 			for _, child := range node.Children {
 				child.Depth = node.Depth + 1
 			}
 			return nil
 		}
-		b.cacheMutex.RUnlock()
+		n.cacheMutex.RUnlock()
 
 		node.IsLoading = true
-		return b.loadSubscriptionsCmd(node.ID)
+		return n.loadSubscriptionsCmd(node.ID)
 	}
 
 	return nil
 }
 
-func (b *NamespaceModel) collapseNode(node *TreeNode) {
+func (n *NamespaceModel) collapseNode(node *TreeNode) {
 	if node == nil || !node.IsExpanded {
 		return
 	}
@@ -387,7 +387,7 @@ func (b *NamespaceModel) collapseNode(node *TreeNode) {
 
 // createMessagesSelectedMsg parses a messages node ID and creates the appropriate message.
 // Node IDs have format: "sub-{topicName}-{subscriptionName}-active" or "sub-{topicName}-{subscriptionName}-dlq"
-func (b *NamespaceModel) createMessagesSelectedMsg(node *TreeNode) *SubscriptionMessagesSelectedMsg {
+func (n *NamespaceModel) createMessagesSelectedMsg(node *TreeNode) *SubscriptionMessagesSelectedMsg {
 	if node == nil || node.Type != NodeTypeMessages {
 		return nil
 	}
@@ -427,8 +427,8 @@ func (b *NamespaceModel) createMessagesSelectedMsg(node *TreeNode) *Subscription
 	}
 }
 
-func (b *NamespaceModel) loadTopicsAndQueuesCmd() tea.Cmd {
-	client := b.client
+func (n *NamespaceModel) loadTopicsAndQueuesCmd() tea.Cmd {
+	client := n.client
 
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultContextTimeout)
@@ -472,8 +472,8 @@ func (b *NamespaceModel) loadTopicsAndQueuesCmd() tea.Cmd {
 	}
 }
 
-func (b *NamespaceModel) loadSubscriptionsCmd(topicID string) tea.Cmd {
-	client := b.client
+func (n *NamespaceModel) loadSubscriptionsCmd(topicID string) tea.Cmd {
+	client := n.client
 
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultContextTimeout)
