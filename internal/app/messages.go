@@ -154,12 +154,19 @@ func (m *MessagesModel) updateColumnWidths() {
 		{Title: "Body (preview)", Width: max(20, available-72)},
 	}
 	m.table.SetColumns(columns)
+
+	if len(m.messages) > 0 {
+		m.updateTableRows()
+	}
 }
 
 func (m *MessagesModel) updateTableRows() {
 	var rows []table.Row
+	bodyColWidth := m.getBodyColumnWidth()
+
 	for _, msg := range m.messages {
-		bodyPreview := truncateString(msg.Body, 50)
+		bodyPreview := styles.FormatJSONCell([]byte(msg.Body), bodyColWidth)
+
 		rows = append(rows, table.Row{
 			fmt.Sprintf("%d", msg.SequenceNumber),
 			truncateString(msg.MessageID, 20),
@@ -169,6 +176,14 @@ func (m *MessagesModel) updateTableRows() {
 		})
 	}
 	m.table.SetRows(rows)
+}
+
+func (m *MessagesModel) getBodyColumnWidth() int {
+	if m.width <= 0 {
+		return 30
+	}
+	available := m.width - 10
+	return max(20, available-72)
 }
 
 func (m *MessagesModel) View() string {
