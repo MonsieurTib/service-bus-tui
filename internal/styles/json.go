@@ -2,7 +2,6 @@ package styles
 
 import (
 	"bytes"
-	"encoding/json"
 	"strings"
 	"unicode"
 
@@ -21,12 +20,7 @@ func FormatJSONCell(body []byte, maxWidth int) string {
 	}
 	text := normalizeWhitespace(string(body))
 
-	if !json.Valid(body) {
-		return truncateANSISafe(text, maxWidth)
-	}
-	highlighted := highlightJSON(text)
-
-	return truncateANSISafe(highlighted, maxWidth)
+	return highlightJSON(text)
 }
 
 func normalizeWhitespace(s string) string {
@@ -70,75 +64,6 @@ func highlightJSON(s string) string {
 	return result
 }
 
-func truncateANSISafe(s string, maxWidth int) string {
-	if maxWidth <= 0 {
-		return ""
-	}
-
-	var result strings.Builder
-	visibleLen := 0
-	runes := []rune(s)
-	i := 0
-	n := len(runes)
-
-	effectiveMax := maxWidth - 3
-
-	for i < n {
-		if runes[i] == '\x1b' && i+1 < n && runes[i+1] == '[' {
-			start := i
-			i += 2
-			for i < n && !isANSITerminator(runes[i]) {
-				i++
-			}
-			if i < n {
-				i++
-			}
-			result.WriteString(string(runes[start:i]))
-			continue
-		}
-
-		if visibleLen >= effectiveMax {
-			hasMore := hasMoreVisibleContent(runes, i)
-			if hasMore {
-				result.WriteString("...")
-				result.WriteString("\x1b[0m")
-				return result.String()
-			}
-		}
-
-		if visibleLen >= maxWidth {
-			result.WriteString("\x1b[0m")
-			return result.String()
-		}
-
-		result.WriteRune(runes[i])
-		visibleLen++
-		i++
-	}
-
-	return result.String()
-}
-
 func isANSITerminator(r rune) bool {
 	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')
-}
-
-func hasMoreVisibleContent(runes []rune, i int) bool {
-	for i < len(runes) {
-		if runes[i] == '\x1b' {
-			i++
-			if i < len(runes) && runes[i] == '[' {
-				i++
-				for i < len(runes) && !isANSITerminator(runes[i]) {
-					i++
-				}
-				if i < len(runes) {
-					i++
-				}
-			}
-			continue
-		}
-		return true
-	}
-	return false
 }

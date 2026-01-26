@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/popandcode/asb-tui/internal/azure"
 	"github.com/popandcode/asb-tui/internal/styles"
+	"github.com/popandcode/asb-tui/internal/table"
 )
 
 type MessagesModel struct {
