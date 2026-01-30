@@ -224,15 +224,16 @@ func (m *ExplorerModel) contentHeight() int {
 }
 
 func (m *ExplorerModel) namespaceWidth() int {
-	w := m.width * 25 / 100
-	if w < 20 {
-		w = 20
+	pct := 15
+	w := m.width * pct / 100
+	if w < pct {
+		w = pct
 	}
 	return w
 }
 
 func (m *ExplorerModel) messagesWidth() int {
-	w := m.width - m.namespaceWidth() - m.detailWidth() - 6 // 6 for borders (3 panes × 2)
+	w := m.width - m.namespaceWidth() - m.detailWidth()
 	if w < 30 {
 		w = 30
 	}
