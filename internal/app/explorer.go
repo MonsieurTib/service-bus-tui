@@ -216,35 +216,23 @@ func (m *ExplorerModel) View() string {
 func (m *ExplorerModel) contentHeight() int {
 	// Reserve: Namespace header (1) + Footer (1) + borders (2) + extra (1)
 	reserved := 5
-	h := m.height - reserved
-	if h < 3 {
-		h = 3
-	}
+	h := max(m.height-reserved, 3)
 	return h
 }
 
 func (m *ExplorerModel) namespaceWidth() int {
 	pct := 15
-	w := m.width * pct / 100
-	if w < pct {
-		w = pct
-	}
+	w := max(m.width*pct/100, pct)
 	return w
 }
 
 func (m *ExplorerModel) messagesWidth() int {
-	w := m.width - m.namespaceWidth() - m.detailWidth()
-	if w < 30 {
-		w = 30
-	}
+	w := max(m.width-m.namespaceWidth()-m.detailWidth(), 30)
 	return w
 }
 
 func (m *ExplorerModel) detailWidth() int {
-	w := m.width * 30 / 100
-	if w < 20 {
-		w = 20
-	}
+	w := max(m.width*30/100, 30)
 	return w
 }
 
