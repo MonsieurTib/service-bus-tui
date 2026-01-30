@@ -2,6 +2,7 @@ package styles
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"unicode"
 
@@ -21,6 +22,14 @@ func FormatJSONCell(body []byte, maxWidth int) string {
 	text := normalizeWhitespace(string(body))
 
 	return highlightJSON(text)
+}
+
+func FormatJSONBody(body []byte) string {
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, body, "", "  "); err == nil {
+		return highlightJSON(pretty.String())
+	}
+	return string(body)
 }
 
 func normalizeWhitespace(s string) string {
@@ -62,8 +71,4 @@ func highlightJSON(s string) string {
 
 	result := strings.TrimSuffix(buf.String(), "\n")
 	return result
-}
-
-func isANSITerminator(r rune) bool {
-	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')
 }

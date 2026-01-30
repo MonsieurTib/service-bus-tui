@@ -14,24 +14,29 @@ type Pane int
 const (
 	PaneNamespace Pane = iota
 	PaneMessages
+	PaneDetail
 )
 
-// ExplorerModel "orchestrates" the namespace tree and messages panel.
+// ExplorerModel "orchestrates" the namespace tree, messages panel, and detail panel.
 type ExplorerModel struct {
 	namespace     *NamespaceModel
 	messages      *MessagesModel
+	detail        *MessageDetailModel
 	activePane    Pane
 	width         int
 	height        int
 	namespaceName string
+	prevCursor    int
 }
 
 func NewExplorerModel(namespaceName string, client *azure.ServiceBusClient) *ExplorerModel {
 	return &ExplorerModel{
 		namespace:     NewNamespaceModel(namespaceName, client),
 		messages:      NewMessagesModel(client),
+		detail:        NewMessageDetailModel(),
 		activePane:    PaneNamespace,
 		namespaceName: namespaceName,
+		prevCursor:    -1,
 	}
 }
 
@@ -57,32 +62,31 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, nsCmd)
 
 		m.messages.SetSize(m.messagesWidth()-2, m.contentHeight())
+		m.detail.SetSize(m.detailWidth()-2, m.contentHeight())
 
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "tab":
-			if !m.messages.isEmpty {
-				if m.activePane == PaneNamespace {
-					m.activePane = PaneMessages
-					m.messages.SetFocused(true)
-				} else {
-					m.activePane = PaneNamespace
-					m.messages.SetFocused(false)
-				}
-			}
+			m.switchPane()
 			return m, nil
 		}
 
-		if m.activePane == PaneNamespace {
+		switch m.activePane {
+		case PaneNamespace:
 			var nsModel tea.Model
 			nsModel, cmd := m.namespace.Update(msg)
 			m.namespace = nsModel.(*NamespaceModel)
 			cmds = append(cmds, cmd)
-		} else {
+
+		case PaneMessages:
 			var msgsModel tea.Model
 			msgsModel, cmd := m.messages.Update(msg)
 			m.messages = msgsModel.(*MessagesModel)
 			cmds = append(cmds, cmd)
+			m.syncDetailWithCursor()
+
+		case PaneDetail:
+			m.detail.Update(msg)
 		}
 
 	case SubscriptionMessagesSelectedMsg:
@@ -98,6 +102,8 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.Messages) > 0 {
 			m.activePane = PaneMessages
 			m.messages.SetFocused(true)
+			m.prevCursor = -1
+			m.syncDetailWithCursor()
 		}
 
 	default:
@@ -115,6 +121,38 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func (m *ExplorerModel) switchPane() {
+	switch m.activePane {
+	case PaneNamespace:
+		if !m.messages.isEmpty {
+			m.activePane = PaneMessages
+			m.messages.SetFocused(true)
+		}
+	case PaneMessages:
+		if !m.messages.isEmpty && m.messages.SelectedMessage() != nil {
+			m.activePane = PaneDetail
+			m.messages.SetFocused(false)
+		} else {
+			m.activePane = PaneNamespace
+			m.messages.SetFocused(false)
+		}
+	case PaneDetail:
+		m.activePane = PaneNamespace
+	}
+}
+
+func (m *ExplorerModel) syncDetailWithCursor() {
+	selected := m.messages.SelectedMessage()
+	if selected == nil {
+		return
+	}
+	cursor := m.messages.table.Cursor()
+	if cursor != m.prevCursor {
+		m.prevCursor = cursor
+		m.detail.SetMessage(selected)
+	}
+}
+
 func (m *ExplorerModel) View() string {
 	var s strings.Builder
 
@@ -123,6 +161,7 @@ func (m *ExplorerModel) View() string {
 
 	treeWidth := m.namespaceWidth()
 	messagesWidth := m.messagesWidth()
+	detailWidth := m.detailWidth()
 	contentHeight := m.contentHeight()
 
 	treeContent := m.namespace.ViewContent()
@@ -131,12 +170,19 @@ func (m *ExplorerModel) View() string {
 	messagesContent := m.messages.ViewContent()
 	messagesContent = padToHeight(messagesContent, contentHeight)
 
+	detailContent := m.detail.ViewContent()
+	detailContent = padToHeight(detailContent, contentHeight)
+
 	treeBorderColor := styles.Muted
 	messagesBorderColor := styles.Muted
-	if m.activePane == PaneNamespace {
+	detailBorderColor := styles.Muted
+	switch m.activePane {
+	case PaneNamespace:
 		treeBorderColor = styles.Primary
-	} else {
+	case PaneMessages:
 		messagesBorderColor = styles.Primary
+	case PaneDetail:
+		detailBorderColor = styles.Primary
 	}
 
 	treeStyle := lipgloss.NewStyle().
@@ -149,13 +195,19 @@ func (m *ExplorerModel) View() string {
 		BorderForeground(messagesBorderColor).
 		Width(messagesWidth - 2)
 
-	leftPane := treeStyle.Render(treeContent)
-	rightPane := messagesStyle.Render(messagesContent)
+	detailStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(detailBorderColor).
+		Width(detailWidth - 2)
 
-	s.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane))
+	leftPane := treeStyle.Render(treeContent)
+	middlePane := messagesStyle.Render(messagesContent)
+	rightPane := detailStyle.Render(detailContent)
+
+	s.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftPane, middlePane, rightPane))
 	s.WriteString("\n")
 
-	s.WriteString(styles.Subtle.Render("tab: switch pane • ↑↓/jk: navigate • ←→/hl/enter: expand • ctrl+c: quit"))
+	s.WriteString(styles.Subtle.Render("tab: switch pane • ↑↓/jk: navigate • ctrl+c: quit"))
 	s.WriteString("\n")
 
 	return s.String()
@@ -172,7 +224,7 @@ func (m *ExplorerModel) contentHeight() int {
 }
 
 func (m *ExplorerModel) namespaceWidth() int {
-	w := m.width * 30 / 100
+	w := m.width * 25 / 100
 	if w < 20 {
 		w = 20
 	}
@@ -180,9 +232,17 @@ func (m *ExplorerModel) namespaceWidth() int {
 }
 
 func (m *ExplorerModel) messagesWidth() int {
-	w := m.width - m.namespaceWidth() - 4 // 4 for borders (2+2)
+	w := m.width - m.namespaceWidth() - m.detailWidth() - 6 // 6 for borders (3 panes × 2)
 	if w < 30 {
 		w = 30
+	}
+	return w
+}
+
+func (m *ExplorerModel) detailWidth() int {
+	w := m.width * 30 / 100
+	if w < 20 {
+		w = 20
 	}
 	return w
 }

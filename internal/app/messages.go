@@ -139,6 +139,17 @@ func (m *MessagesModel) SetFocused(focused bool) {
 	}
 }
 
+func (m *MessagesModel) SelectedMessage() *azure.MessageInfo {
+	if len(m.messages) == 0 {
+		return nil
+	}
+	cursor := m.table.Cursor()
+	if cursor >= 0 && cursor < len(m.messages) {
+		return &m.messages[cursor]
+	}
+	return nil
+}
+
 func (m *MessagesModel) updateColumnWidths() {
 	if m.width <= 0 {
 		return
