@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/muesli/reflow/truncate"
 	"github.com/popandcode/asb-tui/internal/azure"
 	"github.com/popandcode/asb-tui/internal/styles"
 )
@@ -294,11 +295,17 @@ func (n *NamespaceModel) drawNodeLine(s *strings.Builder, node *TreeNode, isSele
 		display += " " + n.spinner.View()
 	}
 
+	linePrefix := "  "
+
+	if maxWidth := n.viewport.Width - len(linePrefix); maxWidth > 0 {
+		display = truncate.StringWithTail(display, uint(maxWidth), "…")
+	}
+
 	var line string
 	if isSelected {
-		line = "  " + styles.Selected.Render(display)
+		line = linePrefix + styles.Selected.Render(display)
 	} else {
-		line = "  " + display
+		line = linePrefix + display
 	}
 
 	s.WriteString(line)
