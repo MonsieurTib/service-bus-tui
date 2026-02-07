@@ -364,7 +364,15 @@ func (sbc *ServiceBusClient) ListSubscriptions(ctx context.Context, topicName st
 	return subscriptions, nil
 }
 
-func (sbc *ServiceBusClient) PeekMessages(ctx context.Context, topicName, subscriptionName string, isDeadLetter bool, maxMessages int) ([]MessageInfo, error) {
+func (sbc *ServiceBusClient) PeekMessages(ctx context.Context, entityName string, isDeadLetter bool, maxMessages int) ([]MessageInfo, error) {
+	// entityName format: "topic/subscription" or "queue"
+	parts := strings.SplitN(entityName, "/", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid entity name format: %s (expected 'topic/subscription')", entityName)
+	}
+	topicName := parts[0]
+	subscriptionName := parts[1]
+
 	var receiver *azservicebus.Receiver
 	var err error
 

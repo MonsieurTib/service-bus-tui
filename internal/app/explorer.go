@@ -89,8 +89,8 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detail.Update(msg)
 		}
 
-	case SubscriptionMessagesSelectedMsg:
-		cmd := m.messages.LoadMessages(msg.TopicName, msg.SubscriptionName, msg.IsDeadLetter)
+	case MessagesSelectedMsg:
+		cmd := m.messages.LoadMessages(msg.EntityName, msg.IsDeadLetter)
 		cmds = append(cmds, cmd)
 
 	case MessagesLoadedMsg:

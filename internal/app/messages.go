@@ -15,18 +15,17 @@ import (
 )
 
 type MessagesModel struct {
-	client           *azure.ServiceBusClient
-	topicName        string
-	subscriptionName string
-	isDeadLetter     bool
-	messages         []azure.MessageInfo
-	table            table.Model
-	spinner          spinner.Model
-	isLoading        bool
-	errMsg           string
-	width            int
-	height           int
-	isEmpty          bool
+	client       *azure.ServiceBusClient
+	entityName   string // e.g. "topic/subscription" or "queue"
+	isDeadLetter bool
+	messages     []azure.MessageInfo
+	table        table.Model
+	spinner      spinner.Model
+	isLoading    bool
+	errMsg       string
+	width        int
+	height       int
+	isEmpty      bool
 }
 
 type MessagesLoadedMsg struct {
@@ -105,9 +104,8 @@ func (m *MessagesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *MessagesModel) LoadMessages(topicName, subscriptionName string, isDeadLetter bool) tea.Cmd {
-	m.topicName = topicName
-	m.subscriptionName = subscriptionName
+func (m *MessagesModel) LoadMessages(entityName string, isDeadLetter bool) tea.Cmd {
+	m.entityName = entityName
 	m.isDeadLetter = isDeadLetter
 	m.isLoading = true
 	m.isEmpty = false
@@ -223,15 +221,14 @@ func (m *MessagesModel) ViewContent() string {
 
 func (m *MessagesModel) loadMessagesCmd() tea.Cmd {
 	client := m.client
-	topicName := m.topicName
-	subscriptionName := m.subscriptionName
+	entityName := m.entityName
 	isDeadLetter := m.isDeadLetter
 
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		messages, err := client.PeekMessages(ctx, topicName, subscriptionName, isDeadLetter, 100)
+		messages, err := client.PeekMessages(ctx, entityName, isDeadLetter, 100)
 		if err != nil {
 			return ErrorMsg(fmt.Sprintf("failed to peek messages: %v", err))
 		}

@@ -31,6 +31,7 @@ type TreeNode struct {
 	IsLoading   bool
 	HasChildren bool
 	Depth       int
+	EntityName  string // e.g. "topic", "topic/subscription", or "queue"
 }
 
 type NamespaceModel struct {
@@ -56,10 +57,9 @@ type SubscriptionsLoadedMsg struct {
 	Subscriptions []*TreeNode
 }
 
-type SubscriptionMessagesSelectedMsg struct {
-	TopicName        string
-	SubscriptionName string
-	IsDeadLetter     bool
+type MessagesSelectedMsg struct {
+	EntityName   string // "topic/subscription" or "queue"
+	IsDeadLetter bool
 }
 
 func NewNamespaceModel(namespace string, client *azure.ServiceBusClient) *NamespaceModel {
@@ -392,45 +392,21 @@ func (n *NamespaceModel) collapseNode(node *TreeNode) {
 	node.IsExpanded = false
 }
 
-// createMessagesSelectedMsg parses a messages node ID and creates the appropriate message.
-// Node IDs have format: "sub-{topicName}-{subscriptionName}-active" or "sub-{topicName}-{subscriptionName}-dlq"
-func (n *NamespaceModel) createMessagesSelectedMsg(node *TreeNode) *SubscriptionMessagesSelectedMsg {
+// createMessagesSelectedMsg reads entity metadata directly from the node.
+func (n *NamespaceModel) createMessagesSelectedMsg(node *TreeNode) *MessagesSelectedMsg {
 	if node == nil || node.Type != NodeTypeMessages {
 		return nil
 	}
 
-	id := node.ID
-	if !strings.HasPrefix(id, "sub-") {
+	if node.EntityName == "" {
 		return nil
 	}
 
-	id = strings.TrimPrefix(id, "sub-")
+	isDeadLetter := strings.HasSuffix(node.ID, "-dlq")
 
-	var isDeadLetter bool
-	var topicAndSub string
-
-	if strings.HasSuffix(id, "-active") {
-		isDeadLetter = false
-		topicAndSub = strings.TrimSuffix(id, "-active")
-	} else if strings.HasSuffix(id, "-dlq") {
-		isDeadLetter = true
-		topicAndSub = strings.TrimSuffix(id, "-dlq")
-	} else {
-		return nil
-	}
-
-	lastHyphen := strings.LastIndex(topicAndSub, "-")
-	if lastHyphen == -1 {
-		return nil
-	}
-
-	topicName := topicAndSub[:lastHyphen]
-	subscriptionName := topicAndSub[lastHyphen+1:]
-
-	return &SubscriptionMessagesSelectedMsg{
-		TopicName:        topicName,
-		SubscriptionName: subscriptionName,
-		IsDeadLetter:     isDeadLetter,
+	return &MessagesSelectedMsg{
+		EntityName:   node.EntityName,
+		IsDeadLetter: isDeadLetter,
 	}
 }
 
@@ -495,16 +471,19 @@ func (n *NamespaceModel) loadSubscriptionsCmd(topicID string) tea.Cmd {
 
 		var nodes []*TreeNode
 		for _, sub := range subscriptions {
+			entityName := fmt.Sprintf("%s/%s", topicName, sub)
 			subNode := &TreeNode{
 				ID:          fmt.Sprintf("sub-%s-%s", topicName, sub),
 				Name:        sub,
 				Type:        NodeTypeSubscription,
+				EntityName:  entityName,
 				HasChildren: true,
 				Children: []*TreeNode{
 					{
 						ID:          fmt.Sprintf("sub-%s-%s-active", topicName, sub),
 						Name:        "Active Messages",
 						Type:        NodeTypeMessages,
+						EntityName:  entityName,
 						HasChildren: false,
 						Children:    []*TreeNode{},
 						Depth:       2,
@@ -513,6 +492,7 @@ func (n *NamespaceModel) loadSubscriptionsCmd(topicID string) tea.Cmd {
 						ID:          fmt.Sprintf("sub-%s-%s-dlq", topicName, sub),
 						Name:        "DLQ Messages",
 						Type:        NodeTypeMessages,
+						EntityName:  entityName,
 						HasChildren: false,
 						Children:    []*TreeNode{},
 						Depth:       2,
