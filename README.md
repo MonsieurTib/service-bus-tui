@@ -9,9 +9,9 @@ A terminal-based explorer for Azure Service Bus.
 ### Authentication
 - Azure CLI authentication (uses existing `az login` session)
 - Interactive browser authentication
+- Connection string
   
 Planned authentication methods:
-- Connection string
 - Service principal (client ID / client secret)
 
 ### Namespace Discovery
