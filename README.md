@@ -4,6 +4,11 @@ A terminal-based explorer for Azure Service Bus.
 
 > **Work in Progress**: This project is currently under active development.
 
+## Preview
+
+<img width="2122" height="1225" alt="Screenshot 2026-02-07 at 16 27 37" src="https://github.com/user-attachments/assets/1119b2e8-1ab1-4763-a4c5-b418676c3079" />
+
+
 ## Features
 
 ### Authentication
