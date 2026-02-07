@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/popandcode/asb-tui/internal/azure"
 	"github.com/popandcode/asb-tui/internal/styles"
@@ -22,34 +23,50 @@ type CredentialType int
 const (
 	AzureCLI CredentialType = iota
 	InteractiveBrowser
+	ConnectionString
 )
 
 type AuthModel struct {
-	selectedAuth         CredentialType
-	authOptions          []string
-	inNamespaceMode      bool
-	errMsg               string
-	isAuthenticating     bool
-	namespaces           []azure.NamespaceInfo
-	selectedNamespaceIdx int
-	authenticatedUser    string
-	spinner              spinner.Model
-	height               int
-	scrollOffset         int
+	selectedAuth           CredentialType
+	authOptions            []string
+	credentialTypes        []CredentialType
+	inNamespaceMode        bool
+	inConnectionStringMode bool
+	connectionStringInput  textinput.Model
+	errMsg                 string
+	isAuthenticating       bool
+	namespaces             []azure.NamespaceInfo
+	selectedNamespaceIdx   int
+	authenticatedUser      string
+	spinner                spinner.Model
+	height                 int
+	scrollOffset           int
 }
 
 func NewAuthModel() *AuthModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 
+	ti := textinput.New()
+	ti.Placeholder = "Endpoint=sb://...;SharedAccessKeyName=...;SharedAccessKey=..."
+	ti.EchoMode = textinput.EchoPassword
+	ti.EchoCharacter = '*'
+	ti.Width = 80
+
 	m := &AuthModel{
 		authOptions: []string{
 			"Interactive Browser",
+			"Connection String",
 		},
-		selectedAuth: InteractiveBrowser,
-		spinner:      s,
-		height:       50,
-		scrollOffset: 0,
+		credentialTypes: []CredentialType{
+			InteractiveBrowser,
+			ConnectionString,
+		},
+		selectedAuth:          0,
+		connectionStringInput: ti,
+		spinner:               s,
+		height:                50,
+		scrollOffset:          0,
 	}
 
 	if user, ok := azure.GetAzureCliAuthenticatedUser(); ok {
@@ -58,14 +75,25 @@ func NewAuthModel() *AuthModel {
 			[]string{fmt.Sprintf("Azure CLI, authenticated as %s", user)},
 			m.authOptions...,
 		)
-		m.selectedAuth = AzureCLI
+		m.credentialTypes = append(
+			[]CredentialType{AzureCLI},
+			m.credentialTypes...,
+		)
+		m.selectedAuth = 0
 	}
 
 	return m
 }
 
 func (m *AuthModel) Init() tea.Cmd {
-	return m.spinner.Tick
+	return tea.Batch(m.spinner.Tick, textinput.Blink)
+}
+
+func (m *AuthModel) selectedCredentialType() CredentialType {
+	if int(m.selectedAuth) < len(m.credentialTypes) {
+		return m.credentialTypes[m.selectedAuth]
+	}
+	return m.credentialTypes[0]
 }
 
 func (m *AuthModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -78,6 +106,12 @@ func (m *AuthModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc":
+			if m.inConnectionStringMode {
+				m.inConnectionStringMode = false
+				m.connectionStringInput.SetValue("")
+				m.errMsg = ""
+				return m, spinnerCmd
+			}
 			if m.inNamespaceMode {
 				m.inNamespaceMode = false
 				m.namespaces = nil
@@ -87,7 +121,9 @@ func (m *AuthModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, spinnerCmd
 		}
 
-		if m.inNamespaceMode {
+		if m.inConnectionStringMode {
+			return m.updateConnectionStringInput(msg)
+		} else if m.inNamespaceMode {
 			return m.updateNamespaceSelection(msg)
 		} else {
 			return m.updateAuthSelection(msg)
@@ -142,10 +178,34 @@ func (m *AuthModel) updateAuthSelection(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		m.errMsg = ""
+		if m.selectedCredentialType() == ConnectionString {
+			m.inConnectionStringMode = true
+			m.connectionStringInput.Focus()
+			return m, textinput.Blink
+		}
 		m.isAuthenticating = true
 		return m, tea.Batch(m.spinner.Tick, m.authenticateAndListNamespacesCmd())
 	}
 	return m, m.spinner.Tick
+}
+
+func (m *AuthModel) updateConnectionStringInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		connStr := strings.TrimSpace(m.connectionStringInput.Value())
+		if connStr == "" {
+			m.errMsg = "connection string cannot be empty"
+			return m, nil
+		}
+		m.errMsg = ""
+		m.isAuthenticating = true
+		m.inConnectionStringMode = false
+		return m, tea.Batch(m.spinner.Tick, m.connectWithConnectionStringCmd(connStr))
+	default:
+		var cmd tea.Cmd
+		m.connectionStringInput, cmd = m.connectionStringInput.Update(msg)
+		return m, cmd
+	}
 }
 
 func (m *AuthModel) View() string {
@@ -154,10 +214,12 @@ func (m *AuthModel) View() string {
 	if m.isAuthenticating {
 		s.WriteString(m.spinner.View())
 		s.WriteString(" ")
-		s.WriteString(styles.Subtle.Render("Authenticating..."))
+		s.WriteString(styles.Subtle.Render("Connecting..."))
 		s.WriteString("\n")
 	} else {
-		if m.inNamespaceMode {
+		if m.inConnectionStringMode {
+			m.viewConnectionStringInput(&s)
+		} else if m.inNamespaceMode {
 			m.viewNamespaceSelection(&s)
 		} else {
 			m.viewAuthSelection(&s)
@@ -233,9 +295,16 @@ func (m *AuthModel) viewAuthSelection(s *strings.Builder) {
 		s.WriteString("\n")
 		s.WriteString(m.spinner.View())
 		s.WriteString(" ")
-		s.WriteString(styles.Subtle.Render("Authenticating..."))
+		s.WriteString(styles.Subtle.Render("Connecting..."))
 		s.WriteString("\n")
 	}
+}
+
+func (m *AuthModel) viewConnectionStringInput(s *strings.Builder) {
+	s.WriteString(styles.Subtle.Render("Enter Connection String"))
+	s.WriteString("\n\n")
+	s.WriteString(m.connectionStringInput.View())
+	s.WriteString("\n")
 }
 
 type NamespacesLoadedMsg struct {
@@ -245,6 +314,7 @@ type NamespacesLoadedMsg struct {
 type ErrorMsg string
 
 func (m *AuthModel) authenticateAndListNamespacesCmd() tea.Cmd {
+	credType := m.selectedCredentialType()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), authContextTimeout)
 		defer cancel()
@@ -252,7 +322,7 @@ func (m *AuthModel) authenticateAndListNamespacesCmd() tea.Cmd {
 		var namespaces []azure.NamespaceInfo
 		var err error
 
-		if m.selectedAuth == AzureCLI {
+		if credType == AzureCLI {
 			namespaces, err = azure.GetNamespacesForAzureCLI(ctx)
 		} else {
 			namespaces, err = azure.GetNamespacesForInteractiveBrowser(ctx)
@@ -267,11 +337,12 @@ func (m *AuthModel) authenticateAndListNamespacesCmd() tea.Cmd {
 }
 
 func (m *AuthModel) connectWithNamespaceCmd(namespace string) tea.Cmd {
+	credType := m.selectedCredentialType()
 	return func() tea.Msg {
 		var client *azure.ServiceBusClient
 		var err error
 
-		if m.selectedAuth == AzureCLI {
+		if credType == AzureCLI {
 			client, err = azure.NewServiceBusClientFromAzureCLI(namespace)
 		} else {
 			client, err = azure.NewServiceBusClientFromInteractiveBrowser(namespace)
@@ -282,6 +353,23 @@ func (m *AuthModel) connectWithNamespaceCmd(namespace string) tea.Cmd {
 		}
 
 		log.Printf("authenticated and connected to namespace: %s", namespace)
+		return NamespaceConnectedMsg{
+			Namespace: namespace,
+			Client:    client,
+		}
+	}
+}
+
+func (m *AuthModel) connectWithConnectionStringCmd(connectionString string) tea.Cmd {
+	return func() tea.Msg {
+		client, err := azure.NewServiceBusClientFromConnectionString(connectionString)
+		if err != nil {
+			return ErrorMsg(fmt.Sprintf("failed to connect with connection string: %v", err))
+		}
+
+		namespace := client.GetNamespace()
+
+		log.Printf("connected to namespace via connection string: %s", namespace)
 		return NamespaceConnectedMsg{
 			Namespace: namespace,
 			Client:    client,

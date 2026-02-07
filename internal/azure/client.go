@@ -33,6 +33,10 @@ type ServiceBusClient struct {
 	namespace   string
 }
 
+func (sbc *ServiceBusClient) GetNamespace() string {
+	return sbc.namespace
+}
+
 type NamespaceInfo struct {
 	Name           string
 	FullyQualified string
@@ -87,6 +91,42 @@ func NewServiceBusClientFromInteractiveBrowser(namespace string) (*ServiceBusCli
 		return nil, fmt.Errorf("failed to create browser credential: %w", err)
 	}
 	return newServiceBusClientWithCredential(cred, namespace)
+}
+
+func NewServiceBusClientFromConnectionString(connectionString string) (*ServiceBusClient, error) {
+	client, err := azservicebus.NewClientFromConnectionString(connectionString, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create service bus client from connection string: %w", err)
+	}
+
+	adminClient, err := admin.NewClientFromConnectionString(connectionString, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create admin client from connection string: %w", err)
+	}
+
+	namespace := parseNamespaceFromConnectionString(connectionString)
+
+	return &ServiceBusClient{
+		client:      client,
+		adminClient: adminClient,
+		namespace:   namespace,
+	}, nil
+}
+
+func parseNamespaceFromConnectionString(connectionString string) string {
+	for part := range strings.SplitSeq(connectionString, ";") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(strings.ToLower(part), "endpoint=") {
+			endpoint := part[len("endpoint="):]
+			endpoint = strings.TrimPrefix(endpoint, "sb://")
+			endpoint = strings.TrimSuffix(endpoint, "/")
+			if idx := strings.Index(endpoint, "."); idx > 0 {
+				return endpoint[:idx]
+			}
+			return endpoint
+		}
+	}
+	return ""
 }
 
 func newInteractiveBrowserCredential() (azcore.TokenCredential, error) {
