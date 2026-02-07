@@ -6,8 +6,7 @@ A terminal-based explorer for Azure Service Bus.
 
 ## Preview
 
-<img width="2122" height="1225" alt="Screenshot 2026-02-07 at 16 27 37" src="https://github.com/user-attachments/assets/1119b2e8-1ab1-4763-a4c5-b418676c3079" />
-
+<img width="2217" height="1312" alt="Screenshot 2026-02-07 at 16 27 58" src="https://github.com/user-attachments/assets/c6deae5b-eef0-4bb8-88c4-5d747d9752b1" />
 
 ## Features
 
