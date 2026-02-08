@@ -84,13 +84,6 @@ winget:
       name: winget-pkgs
       branch: "{{.ProjectName}}-{{.Version}}"
       token: "{{ .Env.WINGET_PKGS_GITHUB_TOKEN }}"
-      pull_request:
-        enabled: true
-        draft: false
-        base:
-          owner: microsoft
-          name: winget-pkgs
-          branch: master
     commit_msg_template: "Winget manifest update for {{ .ProjectName }} version {{ .Tag }}"
     release_notes: "{{.Changelog}}"
 
