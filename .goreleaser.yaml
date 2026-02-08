@@ -72,6 +72,21 @@ brews:
       system "#{bin}/service-bus-tui", "--version"
     commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
 
+winget:
+  - name: service-bus-tui
+    publisher: MonsieurTib
+    short_description: "A terminal-based explorer for Azure Service Bus"
+    license: "MIT"
+    homepage: "https://github.com/MonsieurTib/service-bus-tui"
+    package_identifier: MonsieurTib.service-bus-tui
+    repository:
+      owner: MonsieurTib
+      name: winget-pkgs
+      branch: "{{.ProjectName}}-{{.Version}}"
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    commit_msg_template: "Winget manifest update for {{ .ProjectName }} version {{ .Tag }}"
+    release_notes: "{{.Changelog}}"
+
 release:
   github:
     owner: MonsieurTib
