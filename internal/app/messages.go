@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/wordwrap"
 	"github.com/popandcode/asb-tui/internal/azure"
 	"github.com/popandcode/asb-tui/internal/styles"
 	"github.com/popandcode/asb-tui/internal/table"
@@ -209,7 +210,8 @@ func (m *MessagesModel) ViewContent() string {
 	}
 
 	if m.errMsg != "" {
-		return styles.Error.Render("Error: " + m.errMsg)
+		wrapped := wordwrap.String(m.errMsg, max(m.width-4, 10))
+		return styles.Error.Render(wrapped)
 	}
 
 	if len(m.messages) == 0 {

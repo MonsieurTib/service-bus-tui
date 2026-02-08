@@ -106,6 +106,12 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncDetailWithCursor()
 		}
 
+	case ErrorMsg:
+		var msgsModel tea.Model
+		msgsModel, msgsCmd := m.messages.Update(msg)
+		m.messages = msgsModel.(*MessagesModel)
+		cmds = append(cmds, msgsCmd)
+
 	default:
 		var nsModel tea.Model
 		nsModel, nsCmd := m.namespace.Update(msg)
