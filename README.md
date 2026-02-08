@@ -1,4 +1,4 @@
-# asb-tui
+# service-bus-tui
 
 A terminal-based explorer for Azure Service Bus.
 
@@ -43,22 +43,31 @@ Planned authentication methods:
 
 ## Installation
 
+### Homebrew (macOS/Linux)
+
 ```bash
-go install github.com/popandcode/asb-tui@latest
+brew tap monsieurtib/tap
+brew install service-bus-tui
 ```
 
-Or build from source:
+### Go Install
 
 ```bash
-git clone https://github.com/popandcode/asb-tui.git
-cd asb-tui
-go build -o asb-tui .
+go install github.com/MonsieurTib/service-bus-tui@latest
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/MonsieurTib/service-bus-tui.git
+cd service-bus-tui
+go build -o service-bus-tui .
 ```
 
 ## Usage
 
 ```bash
-asb-tui
+service-bus-tui
 ```
 
 Select an authentication method, choose a namespace, and browse your Service Bus resources.
