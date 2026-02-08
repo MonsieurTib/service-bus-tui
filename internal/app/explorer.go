@@ -3,10 +3,10 @@ package app
 import (
 	"strings"
 
+	"github.com/MonsieurTib/service-bus-tui/internal/azure"
+	"github.com/MonsieurTib/service-bus-tui/internal/styles"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/popandcode/asb-tui/internal/azure"
-	"github.com/popandcode/asb-tui/internal/styles"
 )
 
 type Pane int

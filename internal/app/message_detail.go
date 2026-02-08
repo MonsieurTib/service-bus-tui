@@ -5,11 +5,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/MonsieurTib/service-bus-tui/internal/azure"
+	"github.com/MonsieurTib/service-bus-tui/internal/styles"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/popandcode/asb-tui/internal/azure"
-	"github.com/popandcode/asb-tui/internal/styles"
 )
 
 var (

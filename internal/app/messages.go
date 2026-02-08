@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MonsieurTib/service-bus-tui/internal/azure"
+	"github.com/MonsieurTib/service-bus-tui/internal/styles"
+	"github.com/MonsieurTib/service-bus-tui/internal/table"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/wordwrap"
-	"github.com/popandcode/asb-tui/internal/azure"
-	"github.com/popandcode/asb-tui/internal/styles"
-	"github.com/popandcode/asb-tui/internal/table"
 )
 
 type MessagesModel struct {

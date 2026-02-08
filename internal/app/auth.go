@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MonsieurTib/service-bus-tui/internal/azure"
+	"github.com/MonsieurTib/service-bus-tui/internal/styles"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/popandcode/asb-tui/internal/azure"
-	"github.com/popandcode/asb-tui/internal/styles"
 )
 
 const (

@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 
+	"github.com/MonsieurTib/service-bus-tui/internal/app"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/popandcode/asb-tui/internal/app"
 )
 
 func main() {

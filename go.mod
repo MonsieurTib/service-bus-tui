@@ -1,4 +1,4 @@
-module github.com/popandcode/asb-tui
+module github.com/MonsieurTib/service-bus-tui
 
 go 1.24.2
 

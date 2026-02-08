@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MonsieurTib/service-bus-tui/internal/azure"
+	"github.com/MonsieurTib/service-bus-tui/internal/styles"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/reflow/truncate"
-	"github.com/popandcode/asb-tui/internal/azure"
-	"github.com/popandcode/asb-tui/internal/styles"
 )
 
 const (
