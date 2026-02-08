@@ -83,9 +83,16 @@ winget:
       owner: MonsieurTib
       name: winget-pkgs
       branch: "{{.ProjectName}}-{{.Version}}"
-      token: "{{ .Env.GITHUB_TOKEN }}"
+      token: "{{ .Env.WINGET_PKGS_GITHUB_TOKEN }}"
     commit_msg_template: "Winget manifest update for {{ .ProjectName }} version {{ .Tag }}"
     release_notes: "{{.Changelog}}"
+    pull_request:
+      enabled: true
+      draft: false
+      base:
+        owner: microsoft
+        name: winget-pkgs
+        branch: master
 
 release:
   github:
