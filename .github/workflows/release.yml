@@ -38,9 +38,6 @@ jobs:
     runs-on: windows-latest
     needs: release
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Get version from tag
         id: tag
         shell: bash
@@ -49,15 +46,11 @@ jobs:
       - name: Download Windows amd64 zip and compute checksum
         id: zip
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $version = "${{ steps.tag.outputs.version }}"
           $tag = "${{ github.ref_name }}"
           $zipName = "service-bus-tui_Windows_x86_64.zip"
           $zipUrl = "https://github.com/MonsieurTib/service-bus-tui/releases/download/${tag}/${zipName}"
 
-          # Download the zip to compute checksum
           Invoke-WebRequest -Uri $zipUrl -OutFile $zipName
           $checksum = (Get-FileHash -Path $zipName -Algorithm SHA256).Hash.ToLower()
           Remove-Item $zipName
@@ -65,17 +58,63 @@ jobs:
           echo "url=$zipUrl" >> $env:GITHUB_OUTPUT
           echo "checksum=$checksum" >> $env:GITHUB_OUTPUT
 
-      - name: Prepare install script with URL and checksum
+      - name: Create Chocolatey package files
         shell: pwsh
         run: |
-          $content = Get-Content ".choco/tools/chocolateyinstall.ps1" -Raw
-          $content = $content.Replace('$env:CHOCO_ZIP_URL', "'${{ steps.zip.outputs.url }}'")
-          $content = $content.Replace('$env:CHOCO_ZIP_CHECKSUM', "'${{ steps.zip.outputs.checksum }}'")
-          Set-Content -Path ".choco/tools/chocolateyinstall.ps1" -Value $content
+          $version = "${{ steps.tag.outputs.version }}"
+          $url = "${{ steps.zip.outputs.url }}"
+          $checksum = "${{ steps.zip.outputs.checksum }}"
+
+          New-Item -ItemType Directory -Path "choco/tools" -Force
+
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+            <metadata>
+              <id>service-bus-tui</id>
+              <version>$version</version>
+              <title>service-bus-tui</title>
+              <authors>MonsieurTib</authors>
+              <owners>MonsieurTib</owners>
+              <summary>A terminal-based explorer for Azure Service Bus</summary>
+              <description>service-bus-tui is a terminal-based (TUI) explorer for Azure Service Bus.
+          Browse namespaces, topics, queues, subscriptions, and peek messages
+          directly from your terminal with vim-style keyboard navigation.</description>
+              <projectUrl>https://github.com/MonsieurTib/service-bus-tui</projectUrl>
+              <projectSourceUrl>https://github.com/MonsieurTib/service-bus-tui</projectSourceUrl>
+              <bugTrackerUrl>https://github.com/MonsieurTib/service-bus-tui/issues</bugTrackerUrl>
+              <docsUrl>https://github.com/MonsieurTib/service-bus-tui/blob/main/README.md</docsUrl>
+              <tags>azure service-bus tui terminal cli</tags>
+              <copyright>2026 MonsieurTib</copyright>
+              <licenseUrl>https://github.com/MonsieurTib/service-bus-tui/blob/main/LICENSE</licenseUrl>
+              <requireLicenseAcceptance>false</requireLicenseAcceptance>
+              <releaseNotes>https://github.com/MonsieurTib/service-bus-tui/releases/tag/v$version</releaseNotes>
+            </metadata>
+            <files>
+              <file src="tools\**" target="tools" />
+            </files>
+          </package>
+          "@ | Set-Content -Path "choco/service-bus-tui.nuspec"
+
+          @"
+          `$ErrorActionPreference = 'Stop'
+
+          `$toolsDir = Split-Path -Parent `$MyInvocation.MyCommand.Definition
+
+          `$packageArgs = @{
+            packageName    = `$env:ChocolateyPackageName
+            unzipLocation  = `$toolsDir
+            url64bit       = '$url'
+            checksum64     = '$checksum'
+            checksumType64 = 'sha256'
+          }
+
+          Install-ChocolateyZipPackage @packageArgs
+          "@ | Set-Content -Path "choco/tools/chocolateyinstall.ps1"
 
       - name: Build and push Chocolatey package
         shell: pwsh
         run: |
           $version = "${{ steps.tag.outputs.version }}"
-          choco pack ".choco/service-bus-tui.nuspec" --version $version
+          choco pack "choco/service-bus-tui.nuspec" --version $version
           choco push "service-bus-tui.${version}.nupkg" --source "https://push.chocolatey.org/" --api-key "${{ secrets.CHOCOLATEY_API_KEY }}"
