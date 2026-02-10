@@ -23,6 +23,12 @@ jobs:
         with:
           go-version: '1.24'
 
+      - name: Install Chocolatey
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mono-runtime
+          wget -qO- https://chocolatey.org/install.sh | sudo bash
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -33,3 +39,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           WINGET_PKGS_GITHUB_TOKEN: ${{ secrets.WINGET_PKGS_GITHUB_TOKEN }}
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
