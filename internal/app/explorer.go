@@ -270,7 +270,12 @@ func (m *ExplorerModel) View() string {
 
 	var s strings.Builder
 
-	s.WriteString(styles.Subtle.Render("Namespace: " + m.namespaceName))
+	header := "Namespace: " + m.namespaceName
+	if selectedPath := m.namespace.SelectedPath(m.namespaceName); selectedPath != "" {
+		header = selectedPath
+	}
+
+	s.WriteString(styles.Subtle.Copy().Padding(0, 1).Render(header))
 	s.WriteString("\n")
 
 	treeWidth := m.namespaceWidth()

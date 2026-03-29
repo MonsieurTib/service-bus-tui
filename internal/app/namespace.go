@@ -202,6 +202,41 @@ func (n *NamespaceModel) ensureSelectedVisible() {
 	}
 }
 
+func (n *NamespaceModel) SelectedPath(namespace string) string {
+	if namespace == "" {
+		return ""
+	}
+
+	if n.selectedIdx < 0 || n.selectedIdx >= len(n.flatList) {
+		return ""
+	}
+
+	node := n.flatList[n.selectedIdx]
+	if node == nil {
+		return ""
+	}
+
+	base := ""
+	if node.EntityName != "" {
+		base = namespace + "/" + node.EntityName
+	} else if node.Name != "" {
+		base = namespace + "/" + node.Name
+	}
+
+	if base == "" || node.Type != NodeTypeMessages {
+		return base
+	}
+
+	if strings.HasSuffix(node.ID, "-active") {
+		return base + "/active-messages"
+	}
+	if strings.HasSuffix(node.ID, "-dlq") {
+		return base + "/dlq"
+	}
+
+	return base
+}
+
 func (n *NamespaceModel) View() string {
 	var s strings.Builder
 
