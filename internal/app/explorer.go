@@ -122,7 +122,10 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.String() {
 		case "tab":
-			m.switchPane()
+			m.switchPane(1)
+			return m, nil
+		case "shift+tab":
+			m.switchPane(-1)
 			return m, nil
 		}
 
@@ -200,24 +203,52 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *ExplorerModel) switchPane() {
-	switch m.activePane {
-	case PaneNamespace:
-		if !m.messages.isEmpty {
-			m.activePane = PaneMessages
-			m.messages.SetFocused(true)
-		}
-	case PaneMessages:
-		if !m.messages.isEmpty && m.messages.SelectedMessage() != nil {
-			m.activePane = PaneDetail
-			m.messages.SetFocused(false)
-		} else {
-			m.activePane = PaneNamespace
-			m.messages.SetFocused(false)
-		}
-	case PaneDetail:
-		m.activePane = PaneNamespace
+func (m *ExplorerModel) switchPane(step int) {
+	if step != 1 && step != -1 {
+		return
 	}
+
+	order := []Pane{PaneNamespace, PaneMessages, PaneDetail}
+	current := m.activePaneIndex(order)
+	if current < 0 {
+		return
+	}
+
+	for i := 1; i < len(order); i++ {
+		next := (current + (step * i) + len(order)) % len(order)
+		candidate := order[next]
+		if m.isPaneAvailable(candidate) {
+			m.setActivePane(candidate)
+			return
+		}
+	}
+}
+
+func (m *ExplorerModel) activePaneIndex(order []Pane) int {
+	for i, pane := range order {
+		if pane == m.activePane {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m *ExplorerModel) isPaneAvailable(pane Pane) bool {
+	switch pane {
+	case PaneNamespace:
+		return true
+	case PaneMessages:
+		return !m.messages.isEmpty
+	case PaneDetail:
+		return !m.messages.isEmpty && m.messages.SelectedMessage() != nil
+	default:
+		return false
+	}
+}
+
+func (m *ExplorerModel) setActivePane(pane Pane) {
+	m.activePane = pane
+	m.messages.SetFocused(pane == PaneMessages)
 }
 
 func (m *ExplorerModel) syncDetailWithCursor() {
@@ -307,12 +338,12 @@ func (m *ExplorerModel) View() string {
 }
 
 func (m *ExplorerModel) footerHints() string {
-	base := "tab: switch pane • ↑↓/jk: navigate • ?: help • ctrl+c: quit"
+	base := "tab/shift+tab: switch pane • ↑↓/jk: navigate • ?: help • ctrl+c: quit"
 	if m.activePane == PaneNamespace {
-		base = "tab: switch pane • ↑↓/jk: navigate • S: send • ?: help • ctrl+c: quit"
+		base = "tab/shift+tab: switch pane • ↑↓/jk: navigate • S: send • ?: help • ctrl+c: quit"
 	}
 	if m.activePane == PaneMessages && !m.messages.isEmpty {
-		base = "tab: switch pane • space: select • R: resend/edit sel/current • ?: help • ctrl+c: quit"
+		base = "tab/shift+tab: switch pane • space: select • R: resend/edit sel/current • ?: help • ctrl+c: quit"
 	}
 	return styles.Subtle.Render(base)
 }

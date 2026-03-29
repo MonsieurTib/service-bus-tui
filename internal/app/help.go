@@ -22,7 +22,7 @@ func helpSections() []helpSection {
 		{
 			title: "General",
 			bindings: []helpBinding{
-				{"tab", "Switch pane"},
+				{"tab/shift+tab", "Switch pane"},
 				{"esc", "Go back"},
 				{"?", "Toggle help"},
 				{"ctrl+c", "Quit"},
