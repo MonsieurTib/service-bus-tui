@@ -5,6 +5,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/MonsieurTib/service-bus-tui)](https://github.com/MonsieurTib/service-bus-tui/releases)
 ![Homebrew](https://img.shields.io/github/v/release/MonsieurTib/service-bus-tui?label=homebrew)
 [![WinGet Version](https://img.shields.io/winget/v/MonsieurTib.service-bus-tui)](https://winstall.app/apps/MonsieurTib.service-bus-tui)
+[![Chocolatey](https://img.shields.io/chocolatey/v/service-bus-tui)](https://community.chocolatey.org/packages/service-bus-tui)
 
 # service-bus-tui
 
@@ -86,6 +87,12 @@ brew install service-bus-tui
 
 ```powershell
 winget install MonsieurTib.service-bus-tui
+```
+
+### Chocolatey (Windows)
+
+```powershell
+choco install service-bus-tui
 ```
 
 ### Go Install
