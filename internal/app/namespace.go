@@ -202,6 +202,25 @@ func (n *NamespaceModel) ensureSelectedVisible() {
 	}
 }
 
+func (n *NamespaceModel) HandleMouse(msg tea.MouseMsg) {
+	if n.isLoading || len(n.flatList) == 0 {
+		return
+	}
+
+	switch msg.Type {
+	case tea.MouseWheelUp:
+		if n.selectedIdx > 0 {
+			n.selectedIdx--
+			n.ensureSelectedVisible()
+		}
+	case tea.MouseWheelDown:
+		if n.selectedIdx < len(n.flatList)-1 {
+			n.selectedIdx++
+			n.ensureSelectedVisible()
+		}
+	}
+}
+
 func (n *NamespaceModel) SelectedPath(namespace string) string {
 	if namespace == "" {
 		return ""

@@ -286,6 +286,32 @@ func (m *MessagesModel) SetFocused(focused bool) {
 	}
 }
 
+func (m *MessagesModel) HandleMouse(msg tea.MouseMsg) tea.Cmd {
+	if m.isEmpty || m.isLoading {
+		return nil
+	}
+
+	rowCount := len(m.table.Rows())
+	if rowCount == 0 {
+		return nil
+	}
+
+	switch msg.Type {
+	case tea.MouseWheelUp:
+		if m.table.Cursor() == 0 && m.currentPage > 0 {
+			return m.loadPrevPage()
+		}
+		m.table.MoveUp(1)
+	case tea.MouseWheelDown:
+		if m.table.Cursor() == rowCount-1 && m.hasMore {
+			return m.loadNextPage()
+		}
+		m.table.MoveDown(1)
+	}
+
+	return nil
+}
+
 func (m *MessagesModel) SelectedMessage() *azure.MessageInfo {
 	if len(m.messages) == 0 {
 		return nil

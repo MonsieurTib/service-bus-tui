@@ -70,6 +70,12 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.sendOverlay != nil || m.resendOverlay != nil {
+		if _, ok := msg.(tea.MouseMsg); ok {
+			return m, tea.Batch(cmds...)
+		}
+	}
+
 	if m.resendOverlay != nil {
 		switch msg := msg.(type) {
 		case ResendDismissedMsg:
@@ -145,6 +151,19 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case PaneDetail:
 			m.detail.Update(msg)
+		}
+
+	case tea.MouseMsg:
+		switch m.activePane {
+		case PaneNamespace:
+			m.namespace.HandleMouse(msg)
+		case PaneMessages:
+			if cmd := m.messages.HandleMouse(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			m.syncDetailWithCursor()
+		case PaneDetail:
+			m.detail.HandleMouse(msg)
 		}
 
 	case ResendRequestedMsg:

@@ -76,6 +76,19 @@ func (m *MessageDetailModel) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
+func (m *MessageDetailModel) HandleMouse(msg tea.MouseMsg) {
+	if !m.ready || m.message == nil {
+		return
+	}
+
+	switch msg.Type {
+	case tea.MouseWheelUp:
+		m.viewport.LineUp(1)
+	case tea.MouseWheelDown:
+		m.viewport.LineDown(1)
+	}
+}
+
 func (m *MessageDetailModel) ViewContent() string {
 	if m.message == nil {
 		return styles.Subtle.Render("No message selected")
