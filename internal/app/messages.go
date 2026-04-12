@@ -31,6 +31,7 @@ var (
 	prevPageKey     = key.NewBinding(key.WithKeys("ctrl+p"))
 	toggleSelectKey = key.NewBinding(key.WithKeys(" "))
 	resendKey       = key.NewBinding(key.WithKeys("R"))
+	refreshKey      = key.NewBinding(key.WithKeys("ctrl+r"))
 )
 
 type MessagesModel struct {
@@ -141,6 +142,8 @@ func (m *MessagesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, cmd
 				}
 				return m, nil
+			case key.Matches(msg, refreshKey):
+				return m, m.LoadMessages(m.entityName, m.isDeadLetter, m.sessionOpts)
 			}
 
 			// Explicit page navigation shortcuts

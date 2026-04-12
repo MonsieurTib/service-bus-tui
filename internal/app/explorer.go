@@ -434,10 +434,10 @@ func (m *ExplorerModel) resolveSessionRequirementCmd(entityName string, isDeadLe
 func (m *ExplorerModel) footerHints() string {
 	base := "tab/shift+tab: switch pane • ↑↓/jk: navigate • ?: help • ctrl+c: quit"
 	if m.activePane == PaneNamespace {
-		base = "tab/shift+tab: switch pane • ↑↓/jk: navigate • S: send • ?: help • ctrl+c: quit"
+		base = "tab/shift+tab: switch pane • ↑↓/jk: navigate • S: send • ctrl+r: refresh • ?: help • ctrl+c: quit"
 	}
 	if m.activePane == PaneMessages && !m.messages.isEmpty {
-		base = "tab/shift+tab: switch pane • space: select • R: resend/edit sel/current • ?: help • ctrl+c: quit"
+		base = "tab/shift+tab: switch pane • space: select • R: resend/edit sel/current • ctrl+r: refresh • ?: help • ctrl+c: quit"
 	}
 	return styles.Subtle.Render(base)
 }

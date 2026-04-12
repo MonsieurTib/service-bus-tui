@@ -132,6 +132,10 @@ func (n *NamespaceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				n.collapseNode(node)
 				n.rebuildFlatList()
 			}
+		case "ctrl+r":
+			n.isLoading = true
+			n.subscriptionCache = make(map[string][]*TreeNode)
+			return n, tea.Batch(n.spinner.Tick, n.loadTopicsAndQueuesCmd())
 		}
 
 	case tea.WindowSizeMsg:

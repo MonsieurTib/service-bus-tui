@@ -43,6 +43,7 @@ func helpSections() []helpSection {
 				{"right/l/enter", "Expand / select"},
 				{"left/h", "Collapse"},
 				{"S", "Send to topic/queue"},
+				{"ctrl+r", "Refresh topics & queues"},
 			},
 		},
 		{
@@ -50,6 +51,7 @@ func helpSections() []helpSection {
 			bindings: []helpBinding{
 				{"space", "Toggle select"},
 				{"R", "Resend sel/current (1=edit)"},
+				{"ctrl+r", "Refresh messages"},
 				{"ctrl+n", "Next page"},
 				{"ctrl+p", "Previous page"},
 				{"f/pgdn", "Page down"},
