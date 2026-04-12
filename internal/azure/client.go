@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -68,6 +69,7 @@ type NamespaceInfo struct {
 // MessageInfo I choose "MessageInfo" instead of "Message" to avoid confusion/conflict with azservicebus package
 type MessageInfo struct {
 	MessageID      string
+	SessionID      string
 	CorrelationID  string
 	SequenceNumber int64
 	Subject        string
@@ -75,6 +77,35 @@ type MessageInfo struct {
 	EnqueuedTime   time.Time
 	ContentType    string
 	Properties     map[string]any
+}
+
+type PeekSessionKind int
+
+const (
+	PeekSessionNone PeekSessionKind = iota
+	PeekSessionByID
+)
+
+type PeekSessionOptions struct {
+	Kind      PeekSessionKind
+	SessionID string
+}
+
+func (o PeekSessionOptions) Validate() error {
+	switch o.Kind {
+	case PeekSessionNone:
+		if o.SessionID != "" {
+			return fmt.Errorf("session id must be empty for mode %d", o.Kind)
+		}
+		return nil
+	case PeekSessionByID:
+		if strings.TrimSpace(o.SessionID) == "" {
+			return fmt.Errorf("session id is required")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown session mode: %d", o.Kind)
+	}
 }
 
 func GetAzureCliAuthenticatedUser() (string, bool) {
@@ -85,7 +116,6 @@ func GetAzureCliAuthenticatedUser() (string, bool) {
 
 	username := getAzureCLIUsername()
 	return username, true
-
 }
 
 func getAzureCLIUsername() string {
@@ -467,8 +497,37 @@ func (sbc *ServiceBusClient) ListSubscriptions(ctx context.Context, topicName st
 	return subscriptions, nil
 }
 
-func (sbc *ServiceBusClient) PeekMessages(ctx context.Context, entityName string, isDeadLetter bool, maxMessages int, fromSequenceNumber *int64) ([]MessageInfo, error) {
-	var receiver *azservicebus.Receiver
+func (sbc *ServiceBusClient) EntityRequiresSession(ctx context.Context, entityName string) (bool, error) {
+	if parts := strings.SplitN(entityName, "/", 2); len(parts) == 2 {
+		resp, err := sbc.adminClient.GetSubscription(ctx, parts[0], parts[1], nil)
+		if err != nil {
+			return false, fmt.Errorf("failed to get subscription properties: %w", err)
+		}
+		if resp == nil || resp.RequiresSession == nil {
+			return false, nil
+		}
+		return *resp.RequiresSession, nil
+	}
+
+	resp, err := sbc.adminClient.GetQueue(ctx, entityName, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to get queue properties: %w", err)
+	}
+	if resp == nil || resp.RequiresSession == nil {
+		return false, nil
+	}
+	return *resp.RequiresSession, nil
+}
+
+func (sbc *ServiceBusClient) PeekMessages(ctx context.Context, entityName string, isDeadLetter bool, maxMessages int, fromSequenceNumber *int64, sessionOpts PeekSessionOptions) ([]MessageInfo, error) {
+	if err := sessionOpts.Validate(); err != nil {
+		return nil, err
+	}
+
+	var receiver interface {
+		Close(context.Context) error
+		PeekMessages(context.Context, int, *azservicebus.PeekMessagesOptions) ([]*azservicebus.ReceivedMessage, error)
+	}
 	var err error
 
 	var opts *azservicebus.ReceiverOptions
@@ -478,14 +537,44 @@ func (sbc *ServiceBusClient) PeekMessages(ctx context.Context, entityName string
 		}
 	}
 
+	acceptCtx, acceptCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer acceptCancel()
+
 	// entityName format: "topic/subscription" (contains /) or "queue" (no /)
 	if parts := strings.SplitN(entityName, "/", 2); len(parts) == 2 {
-		receiver, err = sbc.client.NewReceiverForSubscription(parts[0], parts[1], opts)
+		subscriptionName := parts[1]
+		if isDeadLetter && sessionOpts.Kind == PeekSessionByID {
+			subscriptionName += "/$DeadLetterQueue"
+		}
+
+		switch sessionOpts.Kind {
+		case PeekSessionNone:
+			receiver, err = sbc.client.NewReceiverForSubscription(parts[0], parts[1], opts)
+		case PeekSessionByID:
+			receiver, err = sbc.client.AcceptSessionForSubscription(acceptCtx, parts[0], subscriptionName, sessionOpts.SessionID, nil)
+		}
 	} else {
-		receiver, err = sbc.client.NewReceiverForQueue(entityName, opts)
+		queueName := entityName
+		if isDeadLetter && sessionOpts.Kind == PeekSessionByID {
+			queueName += "/$DeadLetterQueue"
+		}
+
+		switch sessionOpts.Kind {
+		case PeekSessionNone:
+			receiver, err = sbc.client.NewReceiverForQueue(entityName, opts)
+		case PeekSessionByID:
+			receiver, err = sbc.client.AcceptSessionForQueue(acceptCtx, queueName, sessionOpts.SessionID, nil)
+		}
 	}
 
 	if err != nil {
+		if sessionOpts.Kind == PeekSessionByID {
+			var sbErr *azservicebus.Error
+			if (errors.As(err, &sbErr) && sbErr.Code == azservicebus.CodeTimeout) ||
+				errors.Is(err, context.DeadlineExceeded) {
+				return []MessageInfo{}, nil
+			}
+		}
 		return nil, fmt.Errorf("failed to create receiver: %w", err)
 	}
 	defer receiver.Close(ctx)
@@ -520,6 +609,10 @@ func (sbc *ServiceBusClient) PeekMessages(ctx context.Context, entityName string
 
 		if msg.CorrelationID != nil {
 			pm.CorrelationID = *msg.CorrelationID
+		}
+
+		if msg.SessionID != nil {
+			pm.SessionID = *msg.SessionID
 		}
 
 		if msg.EnqueuedTime != nil {
@@ -609,6 +702,10 @@ func (sbc *ServiceBusClient) SendMessages(ctx context.Context, destination strin
 				cid := msg.CorrelationID
 				sbMsg.CorrelationID = &cid
 			}
+			if msg.SessionID != "" {
+				sid := msg.SessionID
+				sbMsg.SessionID = &sid
+			}
 
 			if preserveIDs {
 				id := msg.MessageID
@@ -655,6 +752,10 @@ func (sbc *ServiceBusClient) SendSingleMessage(ctx context.Context, destination 
 	if message.CorrelationID != "" {
 		cid := message.CorrelationID
 		sbMsg.CorrelationID = &cid
+	}
+	if message.SessionID != "" {
+		sid := message.SessionID
+		sbMsg.SessionID = &sid
 	}
 
 	if generateID || strings.TrimSpace(message.MessageID) == "" {

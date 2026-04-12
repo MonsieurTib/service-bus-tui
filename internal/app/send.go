@@ -29,6 +29,7 @@ type sendField int
 
 const (
 	fieldMessageID sendField = iota
+	fieldSessionID
 	fieldSubject
 	fieldCorrelationID
 	fieldContentType
@@ -58,6 +59,7 @@ type SendOverlayModel struct {
 	destination         string
 	client              *azure.ServiceBusClient
 	messageIDInput      textinput.Model
+	sessionIDInput      textinput.Model
 	correlationIDInput  textinput.Model
 	subjectInput        textinput.Model
 	bodyInput           textarea.Model
@@ -87,6 +89,10 @@ func NewSendOverlayModel(destination string, client *azure.ServiceBusClient) *Se
 	messageIDInput := textinput.New()
 	messageIDInput.Placeholder = "Auto-generated if empty"
 	messageIDInput.Prompt = ""
+
+	sessionIDInput := textinput.New()
+	sessionIDInput.Placeholder = "Optional session ID"
+	sessionIDInput.Prompt = ""
 
 	correlationIDInput := textinput.New()
 	correlationIDInput.Placeholder = "Optional correlation ID"
@@ -122,6 +128,7 @@ func NewSendOverlayModel(destination string, client *azure.ServiceBusClient) *Se
 		destination:        destination,
 		client:             client,
 		messageIDInput:     messageIDInput,
+		sessionIDInput:     sessionIDInput,
 		correlationIDInput: correlationIDInput,
 		subjectInput:       subjectInput,
 		bodyInput:          bodyInput,
@@ -148,6 +155,7 @@ func NewSendOverlayModelFromMessage(destination string, client *azure.ServiceBus
 	m := NewSendOverlayModel(destination, client)
 
 	m.messageIDInput.SetValue(strings.TrimSpace(message.MessageID))
+	m.sessionIDInput.SetValue(strings.TrimSpace(message.SessionID))
 	m.correlationIDInput.SetValue(strings.TrimSpace(message.CorrelationID))
 	m.subjectInput.SetValue(strings.TrimSpace(message.Subject))
 	m.bodyInput.SetValue(message.Body)
@@ -293,6 +301,10 @@ func (m *SendOverlayModel) handleKey(msg tea.KeyMsg) tea.Cmd {
 			var cmd tea.Cmd
 			m.messageIDInput, cmd = m.messageIDInput.Update(msg)
 			return cmd
+		case fieldSessionID:
+			var cmd tea.Cmd
+			m.sessionIDInput, cmd = m.sessionIDInput.Update(msg)
+			return cmd
 		case fieldCorrelationID:
 			var cmd tea.Cmd
 			m.correlationIDInput, cmd = m.correlationIDInput.Update(msg)
@@ -333,6 +345,7 @@ func (m *SendOverlayModel) startSending() tea.Cmd {
 
 	message := azure.MessageInfo{
 		MessageID:     strings.TrimSpace(m.messageIDInput.Value()),
+		SessionID:     strings.TrimSpace(m.sessionIDInput.Value()),
 		CorrelationID: strings.TrimSpace(m.correlationIDInput.Value()),
 		Subject:       strings.TrimSpace(m.subjectInput.Value()),
 		ContentType:   contentType,
@@ -371,7 +384,7 @@ func (m *SendOverlayModel) selectedContentTypeValue() string {
 }
 
 func (m *SendOverlayModel) availableFields() []sendField {
-	fields := []sendField{fieldMessageID, fieldSubject, fieldCorrelationID, fieldContentType}
+	fields := []sendField{fieldMessageID, fieldSessionID, fieldSubject, fieldCorrelationID, fieldContentType}
 	if m.contentTypeOptions[m.selectedContentType] == "other" {
 		fields = append(fields, fieldCustomContentType)
 	}
@@ -404,6 +417,7 @@ func (m *SendOverlayModel) setFocusedField(field sendField) {
 	m.focusedField = field
 
 	m.messageIDInput.Blur()
+	m.sessionIDInput.Blur()
 	m.correlationIDInput.Blur()
 	m.subjectInput.Blur()
 	m.customTypeInput.Blur()
@@ -414,6 +428,8 @@ func (m *SendOverlayModel) setFocusedField(field sendField) {
 	switch field {
 	case fieldMessageID:
 		m.messageIDInput.Focus()
+	case fieldSessionID:
+		m.sessionIDInput.Focus()
 	case fieldCorrelationID:
 		m.correlationIDInput.Focus()
 	case fieldSubject:
@@ -508,6 +524,7 @@ func (m *SendOverlayModel) resizeInputs(leftWidth, rightWidth, paneHeight int) {
 
 	m.metaInputWidth = leftInputWidth
 	m.messageIDInput.Width = leftInputWidth
+	m.sessionIDInput.Width = leftInputWidth
 	m.correlationIDInput.Width = leftInputWidth
 	m.subjectInput.Width = leftInputWidth
 	m.customTypeInput.Width = leftInputWidth
@@ -562,6 +579,15 @@ func (m *SendOverlayModel) renderComposeMetadata(focusedLabelStyle, labelStyle l
 	}
 	content.WriteString("\n")
 	content.WriteString(renderTextInputField(m.messageIDInput.View(), m.focusedField == fieldMessageID, m.metaInputWidth))
+	content.WriteString("\n\n")
+
+	if m.focusedField == fieldSessionID {
+		content.WriteString(focusedLabelStyle.Render("Session ID"))
+	} else {
+		content.WriteString(labelStyle.Render("Session ID"))
+	}
+	content.WriteString("\n")
+	content.WriteString(renderTextInputField(m.sessionIDInput.View(), m.focusedField == fieldSessionID, m.metaInputWidth))
 	content.WriteString("\n\n")
 
 	if m.focusedField == fieldSubject {

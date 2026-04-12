@@ -1,7 +1,10 @@
 package app
 
 import (
+	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/MonsieurTib/service-bus-tui/internal/azure"
 	"github.com/MonsieurTib/service-bus-tui/internal/styles"
@@ -19,18 +22,26 @@ const (
 
 // ExplorerModel "orchestrates" the namespace tree, messages panel, and detail panel.
 type ExplorerModel struct {
-	namespace     *NamespaceModel
-	messages      *MessagesModel
-	detail        *MessageDetailModel
-	client        *azure.ServiceBusClient
-	activePane    Pane
-	width         int
-	height        int
-	namespaceName string
-	prevCursor    int
-	showHelp      bool
-	resendOverlay *ResendOverlayModel
-	sendOverlay   *SendOverlayModel
+	namespace      *NamespaceModel
+	messages       *MessagesModel
+	detail         *MessageDetailModel
+	client         *azure.ServiceBusClient
+	activePane     Pane
+	width          int
+	height         int
+	namespaceName  string
+	prevCursor     int
+	showHelp       bool
+	resendOverlay  *ResendOverlayModel
+	sendOverlay    *SendOverlayModel
+	sessionOverlay *SessionOverlayModel
+}
+
+type sessionRequirementResolvedMsg struct {
+	entityName       string
+	isDeadLetter     bool
+	requiresSessions bool
+	err              error
 }
 
 func NewExplorerModel(namespaceName string, client *azure.ServiceBusClient) *ExplorerModel {
@@ -55,6 +66,26 @@ func (m *ExplorerModel) Init() tea.Cmd {
 func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	if m.sessionOverlay != nil {
+		switch msg := msg.(type) {
+		case SessionOverlayDismissedMsg:
+			m.sessionOverlay = nil
+			return m, nil
+		case SessionOverlayConfirmedMsg:
+			m.sessionOverlay = nil
+			cmd := m.messages.LoadMessages(msg.EntityName, msg.IsDeadLetter, msg.SessionOpts)
+			cmds = append(cmds, cmd)
+			return m, tea.Batch(cmds...)
+		case tea.KeyMsg:
+			cmd := m.sessionOverlay.Update(msg)
+			cmds = append(cmds, cmd)
+			return m, tea.Batch(cmds...)
+		default:
+			cmd := m.sessionOverlay.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	}
+
 	if m.sendOverlay != nil {
 		switch msg := msg.(type) {
 		case SendDismissedMsg:
@@ -70,7 +101,7 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if m.sendOverlay != nil || m.resendOverlay != nil {
+	if m.sendOverlay != nil || m.resendOverlay != nil || m.sessionOverlay != nil {
 		if _, ok := msg.(tea.MouseMsg); ok {
 			return m, tea.Batch(cmds...)
 		}
@@ -185,7 +216,26 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case MessagesSelectedMsg:
-		cmd := m.messages.LoadMessages(msg.EntityName, msg.IsDeadLetter)
+		cmd := m.resolveSessionRequirementCmd(msg.EntityName, msg.IsDeadLetter)
+		cmds = append(cmds, cmd)
+
+	case sessionRequirementResolvedMsg:
+		if msg.err != nil {
+			var msgsModel tea.Model
+			msgsModel, msgsCmd := m.messages.Update(ErrorMsg(fmt.Sprintf("failed to determine session mode: %v", msg.err)))
+			m.messages = msgsModel.(*MessagesModel)
+			cmds = append(cmds, msgsCmd)
+			return m, tea.Batch(cmds...)
+		}
+
+		if msg.requiresSessions {
+			overlay := NewSessionOverlayModel(msg.entityName, msg.isDeadLetter)
+			m.sessionOverlay = overlay
+			cmds = append(cmds, overlay.Init())
+			return m, tea.Batch(cmds...)
+		}
+
+		cmd := m.messages.LoadMessages(msg.entityName, msg.isDeadLetter, azure.PeekSessionOptions{Kind: azure.PeekSessionNone})
 		cmds = append(cmds, cmd)
 
 	case MessagesLoadedMsg:
@@ -357,8 +407,28 @@ func (m *ExplorerModel) View() string {
 	if m.sendOverlay != nil {
 		return m.sendOverlay.View(m.width, m.height)
 	}
+	if m.sessionOverlay != nil {
+		return m.sessionOverlay.View(m.width, m.height)
+	}
 
 	return view
+}
+
+func (m *ExplorerModel) resolveSessionRequirementCmd(entityName string, isDeadLetter bool) tea.Cmd {
+	client := m.client
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		requiresSessions, err := client.EntityRequiresSession(ctx, entityName)
+		return sessionRequirementResolvedMsg{
+			entityName:       entityName,
+			isDeadLetter:     isDeadLetter,
+			requiresSessions: requiresSessions,
+			err:              err,
+		}
+	}
 }
 
 func (m *ExplorerModel) footerHints() string {

@@ -37,6 +37,7 @@ type MessagesModel struct {
 	client       *azure.ServiceBusClient
 	entityName   string // e.g. "topic/subscription" or "queue"
 	isDeadLetter bool
+	sessionOpts  azure.PeekSessionOptions
 	messages     []azure.MessageInfo
 	table        table.Model
 	spinner      spinner.Model
@@ -248,9 +249,10 @@ func (m *MessagesModel) loadPrevPage() tea.Cmd {
 	)
 }
 
-func (m *MessagesModel) LoadMessages(entityName string, isDeadLetter bool) tea.Cmd {
+func (m *MessagesModel) LoadMessages(entityName string, isDeadLetter bool, sessionOpts azure.PeekSessionOptions) tea.Cmd {
 	m.entityName = entityName
 	m.isDeadLetter = isDeadLetter
+	m.sessionOpts = sessionOpts
 	m.isLoading = true
 	m.isEmpty = false
 	m.errMsg = ""
@@ -518,12 +520,13 @@ func (m *MessagesModel) loadMessagesCmd(fromSequenceNumber *int64, direction pag
 	client := m.client
 	entityName := m.entityName
 	isDeadLetter := m.isDeadLetter
+	sessionOpts := m.sessionOpts
 
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		messages, err := client.PeekMessages(ctx, entityName, isDeadLetter, pageSize, fromSequenceNumber)
+		messages, err := client.PeekMessages(ctx, entityName, isDeadLetter, pageSize, fromSequenceNumber, sessionOpts)
 		if err != nil {
 			return ErrorMsg(fmt.Sprintf("failed to peek messages: %v", err))
 		}
