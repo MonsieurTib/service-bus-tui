@@ -75,6 +75,7 @@ type MessageInfo struct {
 	Subject        string
 	Body           string
 	EnqueuedTime   time.Time
+	TimeToLive     time.Duration
 	ContentType    string
 	Properties     map[string]any
 }
@@ -619,6 +620,10 @@ func (sbc *ServiceBusClient) PeekMessages(ctx context.Context, entityName string
 			pm.EnqueuedTime = *msg.EnqueuedTime
 		}
 
+		if msg.TimeToLive != nil {
+			pm.TimeToLive = *msg.TimeToLive
+		}
+
 		if msg.Body != nil {
 			pm.Body = string(msg.Body)
 		}
@@ -706,6 +711,10 @@ func (sbc *ServiceBusClient) SendMessages(ctx context.Context, destination strin
 				sid := msg.SessionID
 				sbMsg.SessionID = &sid
 			}
+			if msg.TimeToLive != 0 {
+				ttl := msg.TimeToLive
+				sbMsg.TimeToLive = &ttl
+			}
 
 			if preserveIDs {
 				id := msg.MessageID
@@ -756,6 +765,10 @@ func (sbc *ServiceBusClient) SendSingleMessage(ctx context.Context, destination 
 	if message.SessionID != "" {
 		sid := message.SessionID
 		sbMsg.SessionID = &sid
+	}
+	if message.TimeToLive != 0 {
+		ttl := message.TimeToLive
+		sbMsg.TimeToLive = &ttl
 	}
 
 	if generateID || strings.TrimSpace(message.MessageID) == "" {

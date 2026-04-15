@@ -33,5 +33,9 @@ debug.log
 .env
 .env.local
 
+# Local build caches
+.gocache/
+.gomodcache/
+
 # Binary
 @service-bus-tui

@@ -117,6 +117,7 @@ func (m *MessageDetailModel) rebuildContent() {
 	writeField(&b, "Sequence #", fmt.Sprintf("%d", m.message.SequenceNumber))
 	writeField(&b, "Subject", m.message.Subject)
 	writeField(&b, "Enqueued", m.message.EnqueuedTime.Format("2006-01-02 15:04:05"))
+	writeField(&b, "Time To Live", m.message.TimeToLive.String())
 	writeField(&b, "Content-Type", m.message.ContentType)
 
 	if len(m.message.Properties) > 0 {

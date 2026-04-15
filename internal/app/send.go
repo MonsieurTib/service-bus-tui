@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/MonsieurTib/service-bus-tui/internal/azure"
 	"github.com/MonsieurTib/service-bus-tui/internal/styles"
@@ -32,6 +33,7 @@ const (
 	fieldSessionID
 	fieldSubject
 	fieldCorrelationID
+	fieldTimeToLive
 	fieldContentType
 	fieldCustomContentType
 	fieldProperties
@@ -62,6 +64,7 @@ type SendOverlayModel struct {
 	sessionIDInput      textinput.Model
 	correlationIDInput  textinput.Model
 	subjectInput        textinput.Model
+	timeToLiveInput     textinput.Model
 	bodyInput           textarea.Model
 	customTypeInput     textinput.Model
 	contentTypeOptions  []string
@@ -98,6 +101,10 @@ func NewSendOverlayModel(destination string, client *azure.ServiceBusClient) *Se
 	correlationIDInput.Placeholder = "Optional correlation ID"
 	correlationIDInput.Prompt = ""
 
+	timeToLiveInput := textinput.New()
+	timeToLiveInput.Placeholder = "Optional TTL (for example 5m, 1h30m)"
+	timeToLiveInput.Prompt = ""
+
 	customTypeInput := textinput.New()
 	customTypeInput.Placeholder = "application/vnd.my-app+json"
 	customTypeInput.Prompt = ""
@@ -131,6 +138,7 @@ func NewSendOverlayModel(destination string, client *azure.ServiceBusClient) *Se
 		sessionIDInput:     sessionIDInput,
 		correlationIDInput: correlationIDInput,
 		subjectInput:       subjectInput,
+		timeToLiveInput:    timeToLiveInput,
 		bodyInput:          bodyInput,
 		customTypeInput:    customTypeInput,
 		contentTypeOptions: []string{
@@ -159,6 +167,9 @@ func NewSendOverlayModelFromMessage(destination string, client *azure.ServiceBus
 	m.correlationIDInput.SetValue(strings.TrimSpace(message.CorrelationID))
 	m.subjectInput.SetValue(strings.TrimSpace(message.Subject))
 	m.bodyInput.SetValue(message.Body)
+	if message.TimeToLive > 0 {
+		m.timeToLiveInput.SetValue(message.TimeToLive.String())
+	}
 
 	contentType := strings.TrimSpace(message.ContentType)
 	switch contentType {
@@ -313,6 +324,10 @@ func (m *SendOverlayModel) handleKey(msg tea.KeyMsg) tea.Cmd {
 			var cmd tea.Cmd
 			m.subjectInput, cmd = m.subjectInput.Update(msg)
 			return cmd
+		case fieldTimeToLive:
+			var cmd tea.Cmd
+			m.timeToLiveInput, cmd = m.timeToLiveInput.Update(msg)
+			return cmd
 		case fieldCustomContentType:
 			var cmd tea.Cmd
 			m.customTypeInput, cmd = m.customTypeInput.Update(msg)
@@ -340,6 +355,21 @@ func (m *SendOverlayModel) startSending() tea.Cmd {
 		return nil
 	}
 
+	var ttl time.Duration
+	ttlText := strings.TrimSpace(m.timeToLiveInput.Value())
+	if ttlText != "" {
+		parsedTTL, err := time.ParseDuration(ttlText)
+		if err != nil {
+			m.errMsg = "invalid TTL; use Go duration syntax like 5m or 1h30m"
+			return nil
+		}
+		if parsedTTL <= 0 {
+			m.errMsg = "TTL must be greater than 0"
+			return nil
+		}
+		ttl = parsedTTL
+	}
+
 	m.state = sendStateSending
 	m.errMsg = ""
 
@@ -348,6 +378,7 @@ func (m *SendOverlayModel) startSending() tea.Cmd {
 		SessionID:     strings.TrimSpace(m.sessionIDInput.Value()),
 		CorrelationID: strings.TrimSpace(m.correlationIDInput.Value()),
 		Subject:       strings.TrimSpace(m.subjectInput.Value()),
+		TimeToLive:    ttl,
 		ContentType:   contentType,
 		Body:          m.bodyInput.Value(),
 	}
@@ -384,7 +415,7 @@ func (m *SendOverlayModel) selectedContentTypeValue() string {
 }
 
 func (m *SendOverlayModel) availableFields() []sendField {
-	fields := []sendField{fieldMessageID, fieldSessionID, fieldSubject, fieldCorrelationID, fieldContentType}
+	fields := []sendField{fieldMessageID, fieldSessionID, fieldSubject, fieldCorrelationID, fieldTimeToLive, fieldContentType}
 	if m.contentTypeOptions[m.selectedContentType] == "other" {
 		fields = append(fields, fieldCustomContentType)
 	}
@@ -420,6 +451,7 @@ func (m *SendOverlayModel) setFocusedField(field sendField) {
 	m.sessionIDInput.Blur()
 	m.correlationIDInput.Blur()
 	m.subjectInput.Blur()
+	m.timeToLiveInput.Blur()
 	m.customTypeInput.Blur()
 	m.bodyInput.Blur()
 	m.propertyKeyInput.Blur()
@@ -434,6 +466,8 @@ func (m *SendOverlayModel) setFocusedField(field sendField) {
 		m.correlationIDInput.Focus()
 	case fieldSubject:
 		m.subjectInput.Focus()
+	case fieldTimeToLive:
+		m.timeToLiveInput.Focus()
 	case fieldCustomContentType:
 		m.customTypeInput.Focus()
 	case fieldBody:
@@ -527,6 +561,7 @@ func (m *SendOverlayModel) resizeInputs(leftWidth, rightWidth, paneHeight int) {
 	m.sessionIDInput.Width = leftInputWidth
 	m.correlationIDInput.Width = leftInputWidth
 	m.subjectInput.Width = leftInputWidth
+	m.timeToLiveInput.Width = leftInputWidth
 	m.customTypeInput.Width = leftInputWidth
 	targetPropertyRowWidth := lipgloss.Width(renderTextInputField("", false, leftInputWidth))
 	propertyTotalWidth := 2
@@ -606,6 +641,15 @@ func (m *SendOverlayModel) renderComposeMetadata(focusedLabelStyle, labelStyle l
 	}
 	content.WriteString("\n")
 	content.WriteString(renderTextInputField(m.correlationIDInput.View(), m.focusedField == fieldCorrelationID, m.metaInputWidth))
+	content.WriteString("\n\n")
+
+	if m.focusedField == fieldTimeToLive {
+		content.WriteString(focusedLabelStyle.Render("Time To Live"))
+	} else {
+		content.WriteString(labelStyle.Render("Time To Live"))
+	}
+	content.WriteString("\n")
+	content.WriteString(renderTextInputField(m.timeToLiveInput.View(), m.focusedField == fieldTimeToLive, m.metaInputWidth))
 	content.WriteString("\n\n")
 
 	if m.focusedField == fieldContentType {
