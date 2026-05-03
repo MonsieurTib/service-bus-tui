@@ -41,12 +41,13 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.explorerModel = NewExplorerModel(msg.Namespace, msg.Client)
 		m.state = StateExplorer
 		initCmd := m.explorerModel.Init()
+		titleCmd := SetTerminalTitleCmd(TerminalTitle(msg.Namespace))
 		if m.windowWidth > 0 && m.windowHeight > 0 {
 			wsMsg := tea.WindowSizeMsg{Width: m.windowWidth, Height: m.windowHeight}
 			_, sizeCmd := m.explorerModel.Update(wsMsg)
-			return m, tea.Batch(initCmd, sizeCmd)
+			return m, tea.Batch(initCmd, sizeCmd, titleCmd)
 		}
-		return m, initCmd
+		return m, tea.Batch(initCmd, titleCmd)
 
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {

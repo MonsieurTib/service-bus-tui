@@ -8,6 +8,8 @@ import (
 )
 
 func main() {
+	app.SetTerminalTitle(app.TerminalTitle(""))
+
 	f, err := tea.LogToFile("debug.log", "debug")
 	if err != nil {
 		log.Fatalf("failed to create debug log: %v", err)
