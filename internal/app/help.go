@@ -51,6 +51,7 @@ func helpSections() []helpSection {
 			bindings: []helpBinding{
 				{"space", "Toggle select"},
 				{"R", "Resend sel/current (1=edit)"},
+				{"ctrl+y", "Copy body"},
 				{"ctrl+r", "Refresh messages"},
 				{"ctrl+n", "Next page"},
 				{"ctrl+p", "Previous page"},
@@ -58,6 +59,12 @@ func helpSections() []helpSection {
 				{"b/pgup", "Page up"},
 				{"u/ctrl+u", "Half page up"},
 				{"d/ctrl+d", "Half page down"},
+			},
+		},
+		{
+			title: "Detail",
+			bindings: []helpBinding{
+				{"ctrl+y", "Copy body"},
 			},
 		},
 	}

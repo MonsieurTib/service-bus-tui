@@ -47,6 +47,7 @@ A terminal-based explorer for Azure Service Bus.
 - Tabular display with sequence number, message ID, subject, enqueued time, and body preview
 - JSON body formatting in preview
 - Paginated browsing (100 messages per page) with automatic page detection at boundaries
+- Copy raw message body to clipboard from message list/detail (`ctrl+y`)
 
 ### Message Resending
 - Resend selected messages back to their source topic or queue
@@ -61,6 +62,7 @@ A terminal-based explorer for Azure Service Bus.
 - Send new messages directly to a topic or queue
 - Compose subject, content type, and body from an in-app modal form
 - Content type selection with built-in presets and custom value support
+- Copy compose/resend-edit body to clipboard (`ctrl+y`)
 
 ### Navigation
 - Keyboard-driven interface
@@ -68,6 +70,7 @@ A terminal-based explorer for Azure Service Bus.
 - `left/right` or `h/l` or `enter`: Expand/collapse nodes
 - `tab`: Switch between namespace tree and messages pane
 - `ctrl+n` / `ctrl+p`: Next/previous page of messages
+- `ctrl+y`: Copy raw message body to clipboard (message list, detail, send/resend-edit body)
 - `S`: Open send message modal from selected topic/queue
 - `space`: Select/deselect messages
 - `R`: Resend selected messages (or current row if none selected; single selection opens editable form)

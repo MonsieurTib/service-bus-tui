@@ -33,6 +33,10 @@ type MessageDetailModel struct {
 	ready    bool
 }
 
+type CopyBodyRequestedMsg struct {
+	Body string
+}
+
 func NewMessageDetailModel() *MessageDetailModel {
 	return &MessageDetailModel{}
 }
@@ -70,6 +74,14 @@ func (m *MessageDetailModel) Update(msg tea.Msg) tea.Cmd {
 			m.viewport.LineDown(1)
 		case "up", "k":
 			m.viewport.LineUp(1)
+		case "ctrl+y":
+			if m.message == nil {
+				return nil
+			}
+			body := m.message.Body
+			return func() tea.Msg {
+				return CopyBodyRequestedMsg{Body: body}
+			}
 		}
 	}
 

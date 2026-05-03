@@ -32,6 +32,7 @@ var (
 	toggleSelectKey = key.NewBinding(key.WithKeys(" "))
 	resendKey       = key.NewBinding(key.WithKeys("R"))
 	refreshKey      = key.NewBinding(key.WithKeys("ctrl+r"))
+	copyBodyKey     = key.NewBinding(key.WithKeys("ctrl+y"))
 )
 
 type MessagesModel struct {
@@ -144,6 +145,11 @@ func (m *MessagesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case key.Matches(msg, refreshKey):
 				return m, m.LoadMessages(m.entityName, m.isDeadLetter, m.sessionOpts)
+			case key.Matches(msg, copyBodyKey):
+				if cmd := m.requestCopyBody(); cmd != nil {
+					return m, cmd
+				}
+				return m, nil
 			}
 
 			// Explicit page navigation shortcuts
@@ -360,6 +366,17 @@ func (m *MessagesModel) requestResend() tea.Cmd {
 			Destination:     dest,
 			EditableMessage: editableMessage,
 		}
+	}
+}
+
+func (m *MessagesModel) requestCopyBody() tea.Cmd {
+	selected := m.SelectedMessage()
+	if selected == nil {
+		return nil
+	}
+	body := selected.Body
+	return func() tea.Msg {
+		return CopyBodyRequestedMsg{Body: body}
 	}
 }
 

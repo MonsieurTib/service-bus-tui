@@ -181,7 +181,9 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncDetailWithCursor()
 
 		case PaneDetail:
-			m.detail.Update(msg)
+			if cmd := m.detail.Update(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
 
 	case tea.MouseMsg:
@@ -256,6 +258,9 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		msgsModel, msgsCmd := m.messages.Update(msg)
 		m.messages = msgsModel.(*MessagesModel)
 		cmds = append(cmds, msgsCmd)
+
+	case CopyBodyRequestedMsg:
+		_, _ = CopyTextToClipboard(msg.Body)
 
 	default:
 		var nsModel tea.Model
@@ -437,7 +442,10 @@ func (m *ExplorerModel) footerHints() string {
 		base = "tab/shift+tab: switch pane • ↑↓/jk: navigate • S: send • ctrl+r: refresh • ?: help • ctrl+c: quit"
 	}
 	if m.activePane == PaneMessages && !m.messages.isEmpty {
-		base = "tab/shift+tab: switch pane • space: select • R: resend/edit sel/current • ctrl+r: refresh • ?: help • ctrl+c: quit"
+		base = "tab/shift+tab: switch pane • space: select • R: resend/edit sel/current • ctrl+y: copy body • ctrl+r: refresh • ?: help • ctrl+c: quit"
+	}
+	if m.activePane == PaneDetail {
+		base = "tab/shift+tab: switch pane • ↑↓/jk: scroll • ctrl+y: copy body • ?: help • ctrl+c: quit"
 	}
 	return styles.Subtle.Render(base)
 }

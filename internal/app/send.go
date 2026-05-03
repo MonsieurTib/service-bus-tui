@@ -281,6 +281,12 @@ func (m *SendOverlayModel) handleKey(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		case "ctrl+s":
 			return m.startSending()
+		case "ctrl+y":
+			_, err := CopyTextToClipboard(m.bodyInput.Value())
+			if err != nil {
+				m.errMsg = fmt.Sprintf("copy failed: %v", err)
+			}
+			return nil
 		}
 
 		if m.focusedField == fieldContentType {
@@ -870,7 +876,7 @@ func (m *SendOverlayModel) renderComposeBody(focusedLabelStyle, labelStyle lipgl
 	help := lipgloss.NewStyle().
 		Width(max(m.bodyInputWidth+2, 10)).
 		Align(lipgloss.Right).
-		Render(styles.Subtle.Render("tab: next · shift+tab: prev · ctrl+s: send · esc: cancel"))
+		Render(styles.Subtle.Render("tab: next · shift+tab: prev · ctrl+y: copy body · ctrl+s: send · esc: cancel"))
 
 	bodySection := lipgloss.NewStyle().
 		Width(max(m.bodyInputWidth+2, 10)).
