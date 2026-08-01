@@ -51,11 +51,16 @@ type ServiceBusClient struct {
 	client      *azservicebus.Client
 	adminClient *admin.Client
 	namespace   string
+	entityPath  string
 	isEmulator  bool
 }
 
 func (sbc *ServiceBusClient) GetNamespace() string {
 	return sbc.namespace
+}
+
+func (sbc *ServiceBusClient) GetEntityPath() string {
+	return sbc.entityPath
 }
 
 type NamespaceInfo struct {
@@ -171,11 +176,13 @@ func NewServiceBusClientFromConnectionString(connectionString string) (*ServiceB
 	}
 
 	namespace := parseNamespaceFromConnectionString(connectionString)
+	entityPath := parseEntityPathFromConnectionString(connectionString)
 
 	return &ServiceBusClient{
 		client:      client,
 		adminClient: adminClient,
 		namespace:   namespace,
+		entityPath:  entityPath,
 		isEmulator:  emulator,
 	}, nil
 }
@@ -195,6 +202,16 @@ func parseNamespaceFromConnectionString(connectionString string) string {
 				return endpoint[:idx]
 			}
 			return endpoint
+		}
+	}
+	return ""
+}
+
+func parseEntityPathFromConnectionString(connectionString string) string {
+	for part := range strings.SplitSeq(connectionString, ";") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(strings.ToLower(part), "entitypath=") {
+			return part[len("entitypath="):]
 		}
 	}
 	return ""
@@ -478,6 +495,22 @@ func (sbc *ServiceBusClient) ListQueues(ctx context.Context) ([]string, error) {
 
 	log.Printf("[ListQueues] total queues found: %d, pager.More() returned false", len(queues))
 	return queues, nil
+}
+
+func IsAuthorizationError(err error) bool {
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) {
+		return respErr.StatusCode == http.StatusUnauthorized || respErr.StatusCode == http.StatusForbidden
+	}
+	return false
+}
+
+func IsSessionRequiredError(err error) bool {
+	var sbErr *azservicebus.Error
+	if errors.As(err, &sbErr) {
+		return strings.Contains(strings.ToLower(string(sbErr.Code)), "session")
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "session")
 }
 
 func (sbc *ServiceBusClient) ListSubscriptions(ctx context.Context, topicName string) ([]string, error) {

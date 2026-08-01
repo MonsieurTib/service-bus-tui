@@ -35,6 +35,7 @@ type ExplorerModel struct {
 	resendOverlay  *ResendOverlayModel
 	sendOverlay    *SendOverlayModel
 	sessionOverlay *SessionOverlayModel
+	manualMode     bool
 }
 
 type sessionRequirementResolvedMsg struct {
@@ -217,9 +218,29 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, overlay.Init())
 		return m, tea.Batch(cmds...)
 
+	case ManualModeMsg:
+		m.manualMode = true
+		var nsModel tea.Model
+		nsModel, nsCmd := m.namespace.Update(msg)
+		m.namespace = nsModel.(*NamespaceModel)
+		cmds = append(cmds, nsCmd)
+
 	case MessagesSelectedMsg:
+		if m.manualMode {
+			cmd := m.messages.LoadMessages(msg.EntityName, msg.IsDeadLetter, azure.PeekSessionOptions{Kind: azure.PeekSessionNone})
+			cmds = append(cmds, cmd)
+			return m, tea.Batch(cmds...)
+		}
 		cmd := m.resolveSessionRequirementCmd(msg.EntityName, msg.IsDeadLetter)
 		cmds = append(cmds, cmd)
+
+	case SessionRequiredMsg:
+		m.messages.ResetForSessionPrompt()
+
+		overlay := NewSessionOverlayModel(msg.EntityName, msg.IsDeadLetter)
+		m.sessionOverlay = overlay
+		cmds = append(cmds, overlay.Init())
+		return m, tea.Batch(cmds...)
 
 	case sessionRequirementResolvedMsg:
 		if msg.err != nil {
@@ -258,6 +279,17 @@ func (m *ExplorerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		msgsModel, msgsCmd := m.messages.Update(msg)
 		m.messages = msgsModel.(*MessagesModel)
 		cmds = append(cmds, msgsCmd)
+
+	case PeekFailedMsg:
+		var msgsModel tea.Model
+		msgsModel, msgsCmd := m.messages.Update(msg)
+		m.messages = msgsModel.(*MessagesModel)
+		cmds = append(cmds, msgsCmd)
+
+		// Only remove on the first peek failing, not a later page.
+		if m.manualMode && msg.Direction == pageInitial {
+			m.namespace.RemoveManualEntityByName(msg.EntityName)
+		}
 
 	case CopyBodyRequestedMsg:
 		_, _ = CopyTextToClipboard(msg.Body)
@@ -440,6 +472,9 @@ func (m *ExplorerModel) footerHints() string {
 	base := "tab/shift+tab: switch pane • ↑↓/jk: navigate • ?: help • ctrl+c: quit"
 	if m.activePane == PaneNamespace {
 		base = "tab/shift+tab: switch pane • ↑↓/jk: navigate • S: send • ctrl+r: refresh • ?: help • ctrl+c: quit"
+		if m.manualMode {
+			base = "tab/shift+tab: switch pane • ↑↓/jk: navigate • a: add entity • S: send • ctrl+r: refresh • ?: help • ctrl+c: quit"
+		}
 	}
 	if m.activePane == PaneMessages && !m.messages.isEmpty {
 		base = "tab/shift+tab: switch pane • space: select • R: resend/edit sel/current • ctrl+y: copy body • ctrl+r: refresh • ?: help • ctrl+c: quit"

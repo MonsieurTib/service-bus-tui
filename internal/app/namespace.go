@@ -10,6 +10,7 @@ import (
 	"github.com/MonsieurTib/service-bus-tui/internal/azure"
 	"github.com/MonsieurTib/service-bus-tui/internal/styles"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/reflow/truncate"
@@ -46,10 +47,19 @@ type NamespaceModel struct {
 	spinner           spinner.Model
 	viewport          viewport.Model
 	flatList          []*TreeNode
+	manualMode        bool
+	inManualEntry     bool
+	entityInput       textinput.Model
 }
 
 type TopicsAndQueuesLoadedMsg struct {
 	Nodes []*TreeNode
+}
+
+// ManualModeMsg means the connection has no MANAGE claim, so entities have
+// to be added by name instead of enumerated.
+type ManualModeMsg struct {
+	Entities []string
 }
 
 type SubscriptionsLoadedMsg struct {
@@ -67,6 +77,10 @@ func NewNamespaceModel(namespace string, client *azure.ServiceBusClient) *Namesp
 	s.Spinner = spinner.MiniDot
 	vp := viewport.New(0, 0)
 
+	entityInput := textinput.New()
+	entityInput.Placeholder = "e.g. orders"
+	entityInput.Width = 40
+
 	return &NamespaceModel{
 		namespace:         namespace,
 		client:            client,
@@ -77,6 +91,7 @@ func NewNamespaceModel(namespace string, client *azure.ServiceBusClient) *Namesp
 		spinner:           s,
 		viewport:          vp,
 		flatList:          []*TreeNode{},
+		entityInput:       entityInput,
 	}
 }
 
@@ -93,7 +108,18 @@ func (n *NamespaceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if n.inManualEntry {
+			return n.updateManualEntry(msg)
+		}
+
 		switch msg.String() {
+		case "a":
+			if n.manualMode {
+				n.inManualEntry = true
+				n.entityInput.SetValue("")
+				n.entityInput.Focus()
+				return n, tea.Batch(spinnerCmd, textinput.Blink)
+			}
 		case "S":
 			if n.selectedIdx >= 0 && n.selectedIdx < len(n.flatList) {
 				node := n.flatList[n.selectedIdx]
@@ -150,6 +176,33 @@ func (n *NamespaceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		n.rebuildFlatList()
 		n.viewport.YOffset = 0
 
+	case ManualModeMsg:
+		n.manualMode = true
+		n.isLoading = false
+		n.errMsg = ""
+
+		var seededEntity string
+		seededCount := 0
+		for _, entity := range msg.Entities {
+			if entityName, added := n.addManualEntity(entity); added {
+				seededEntity = entityName
+				seededCount++
+			}
+		}
+
+		n.rebuildFlatList()
+		n.viewport.YOffset = 0
+
+		// Auto-load the seeded entity so the user doesn't have to dig for it.
+		if seededCount == 1 {
+			n.selectedIdx = max(len(n.flatList)-2, 0)
+			n.ensureSelectedVisible()
+			return n, func() tea.Msg {
+				return MessagesSelectedMsg{EntityName: seededEntity, IsDeadLetter: false}
+			}
+		}
+		n.selectedIdx = 0
+
 	case SubscriptionsLoadedMsg:
 		n.cacheMutex.Lock()
 		n.subscriptionCache[msg.TopicID] = msg.Subscriptions
@@ -165,7 +218,11 @@ func (n *NamespaceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		n.rebuildFlatList()
 
 	case ErrorMsg:
+		n.isLoading = false
 		n.errMsg = string(msg)
+		for _, node := range n.flatList {
+			node.IsLoading = false
+		}
 	}
 
 	if n.isLoading || n.anyNodeLoading() {
@@ -302,8 +359,31 @@ func (n *NamespaceModel) ViewContent() string {
 		return s.String()
 	}
 
+	if n.inManualEntry {
+		inputWidth := max(n.viewport.Width-4, 10)
+		n.entityInput.Width = inputWidth
+
+		s.WriteString(styles.Label.Render("Add entity"))
+		s.WriteString("\n")
+		s.WriteString(renderTextInputField(n.entityInput.View(), true, inputWidth))
+		s.WriteString("\n")
+		s.WriteString(styles.Subtle.Render("queue or topic/sub"))
+		s.WriteString("\n")
+		s.WriteString(styles.Subtle.Render("enter add, esc cancel"))
+		s.WriteString("\n\n")
+	}
+
 	if len(n.flatList) == 0 {
-		s.WriteString(styles.Subtle.Render("No topics or queues found"))
+		if n.inManualEntry {
+			return s.String()
+		}
+		if n.manualMode {
+			s.WriteString(styles.Subtle.Render("No MANAGE permission."))
+			s.WriteString("\n")
+			s.WriteString(styles.Subtle.Render("Press 'a' to add an entity."))
+		} else {
+			s.WriteString(styles.Subtle.Render("No topics or queues found"))
+		}
 		return s.String()
 	}
 
@@ -462,6 +542,78 @@ func (n *NamespaceModel) collapseNode(node *TreeNode) {
 	node.IsExpanded = false
 }
 
+func (n *NamespaceModel) updateManualEntry(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		name := strings.TrimSpace(n.entityInput.Value())
+		n.inManualEntry = false
+		n.entityInput.Blur()
+		n.entityInput.SetValue("")
+		if name == "" {
+			return n, nil
+		}
+		entityName, added := n.addManualEntity(name)
+		if !added {
+			return n, nil
+		}
+		n.rebuildFlatList()
+		n.selectedIdx = max(len(n.flatList)-2, 0)
+		n.ensureSelectedVisible()
+		return n, func() tea.Msg {
+			return MessagesSelectedMsg{EntityName: entityName, IsDeadLetter: false}
+		}
+	case "esc":
+		n.inManualEntry = false
+		n.entityInput.Blur()
+		n.entityInput.SetValue("")
+		return n, nil
+	default:
+		var cmd tea.Cmd
+		n.entityInput, cmd = n.entityInput.Update(msg)
+		return n, cmd
+	}
+}
+
+// addManualEntity adds name as a root node. Returns its EntityName and true,
+// or ("", false) if blank or already added.
+func (n *NamespaceModel) addManualEntity(name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", false
+	}
+
+	node := newManualEntityNode(name)
+
+	for _, existing := range n.rootNodes {
+		if existing.EntityName == node.EntityName {
+			return "", false
+		}
+	}
+
+	n.rootNodes = append(n.rootNodes, node)
+	return node.EntityName, true
+}
+
+// RemoveManualEntityByName removes a manually-added entity, e.g. once its
+// peek fails and we know it doesn't exist.
+func (n *NamespaceModel) RemoveManualEntityByName(entityName string) {
+	if !n.manualMode {
+		return
+	}
+
+	for i, root := range n.rootNodes {
+		if root.EntityName == entityName {
+			n.rootNodes = append(n.rootNodes[:i], n.rootNodes[i+1:]...)
+			n.rebuildFlatList()
+			if n.selectedIdx >= len(n.flatList) {
+				n.selectedIdx = max(len(n.flatList)-1, 0)
+			}
+			n.ensureSelectedVisible()
+			return
+		}
+	}
+}
+
 // createMessagesSelectedMsg reads entity metadata directly from the node.
 func (n *NamespaceModel) createMessagesSelectedMsg(node *TreeNode) *MessagesSelectedMsg {
 	if node == nil || node.Type != NodeTypeMessages {
@@ -509,11 +661,17 @@ func (n *NamespaceModel) loadTopicsAndQueuesCmd() tea.Cmd {
 
 		topics, err := client.ListTopics(ctx)
 		if err != nil {
+			if azure.IsAuthorizationError(err) {
+				return ManualModeMsg{Entities: manualSeedEntities(client.GetEntityPath())}
+			}
 			return ErrorMsg(fmt.Sprintf("failed to load topics: %v", err))
 		}
 
 		queues, err := client.ListQueues(ctx)
 		if err != nil {
+			if azure.IsAuthorizationError(err) {
+				return ManualModeMsg{Entities: manualSeedEntities(client.GetEntityPath())}
+			}
 			return ErrorMsg(fmt.Sprintf("failed to load queues: %v", err))
 		}
 
@@ -531,34 +689,7 @@ func (n *NamespaceModel) loadTopicsAndQueuesCmd() tea.Cmd {
 		}
 
 		for _, queue := range queues {
-			nodes = append(nodes, &TreeNode{
-				ID:          fmt.Sprintf("queue-%s", queue),
-				Name:        queue,
-				Type:        NodeTypeQueue,
-				HasChildren: true,
-				EntityName:  queue,
-				Children: []*TreeNode{
-					{
-						ID:          fmt.Sprintf("queue-%s-active", queue),
-						Name:        "Active Messages",
-						Type:        NodeTypeMessages,
-						EntityName:  queue,
-						HasChildren: false,
-						Children:    []*TreeNode{},
-						Depth:       1,
-					},
-					{
-						ID:          fmt.Sprintf("queue-%s-dlq", queue),
-						Name:        "DLQ Messages",
-						Type:        NodeTypeMessages,
-						EntityName:  queue,
-						HasChildren: false,
-						Children:    []*TreeNode{},
-						Depth:       1,
-					},
-				},
-				Depth: 0,
-			})
+			nodes = append(nodes, newQueueNode(queue))
 		}
 
 		return TopicsAndQueuesLoadedMsg{Nodes: nodes}
@@ -581,36 +712,7 @@ func (n *NamespaceModel) loadSubscriptionsCmd(topicID string) tea.Cmd {
 
 		var nodes []*TreeNode
 		for _, sub := range subscriptions {
-			entityName := fmt.Sprintf("%s/%s", topicName, sub)
-			subNode := &TreeNode{
-				ID:          fmt.Sprintf("sub-%s-%s", topicName, sub),
-				Name:        sub,
-				Type:        NodeTypeSubscription,
-				EntityName:  entityName,
-				HasChildren: true,
-				Children: []*TreeNode{
-					{
-						ID:          fmt.Sprintf("sub-%s-%s-active", topicName, sub),
-						Name:        "Active Messages",
-						Type:        NodeTypeMessages,
-						EntityName:  entityName,
-						HasChildren: false,
-						Children:    []*TreeNode{},
-						Depth:       2,
-					},
-					{
-						ID:          fmt.Sprintf("sub-%s-%s-dlq", topicName, sub),
-						Name:        "DLQ Messages",
-						Type:        NodeTypeMessages,
-						EntityName:  entityName,
-						HasChildren: false,
-						Children:    []*TreeNode{},
-						Depth:       2,
-					},
-				},
-				Depth: 1,
-			}
-			nodes = append(nodes, subNode)
+			nodes = append(nodes, newSubscriptionNode(topicName, sub))
 		}
 
 		return SubscriptionsLoadedMsg{
@@ -618,6 +720,97 @@ func (n *NamespaceModel) loadSubscriptionsCmd(topicID string) tea.Cmd {
 			Subscriptions: nodes,
 		}
 	}
+}
+
+// manualSeedEntities seeds manual mode from the connection string's EntityPath.
+func manualSeedEntities(entityPath string) []string {
+	if entityPath == "" {
+		return nil
+	}
+	return []string{entityPath}
+}
+
+// newMessageNodes builds the Active/DLQ Messages leaf pair.
+func newMessageNodes(idPrefix, entityName string, depth int) []*TreeNode {
+	return []*TreeNode{
+		{
+			ID:          idPrefix + "-active",
+			Name:        "Active Messages",
+			Type:        NodeTypeMessages,
+			EntityName:  entityName,
+			HasChildren: false,
+			Children:    []*TreeNode{},
+			Depth:       depth,
+		},
+		{
+			ID:          idPrefix + "-dlq",
+			Name:        "DLQ Messages",
+			Type:        NodeTypeMessages,
+			EntityName:  entityName,
+			HasChildren: false,
+			Children:    []*TreeNode{},
+			Depth:       depth,
+		},
+	}
+}
+
+func newQueueNode(name string) *TreeNode {
+	id := fmt.Sprintf("queue-%s", name)
+	return &TreeNode{
+		ID:          id,
+		Name:        name,
+		Type:        NodeTypeQueue,
+		HasChildren: true,
+		EntityName:  name,
+		Children:    newMessageNodes(id, name, 1),
+		Depth:       0,
+	}
+}
+
+func newSubscriptionNode(topicName, subName string) *TreeNode {
+	entityName := fmt.Sprintf("%s/%s", topicName, subName)
+	id := fmt.Sprintf("sub-%s-%s", topicName, subName)
+	return &TreeNode{
+		ID:          id,
+		Name:        subName,
+		Type:        NodeTypeSubscription,
+		EntityName:  entityName,
+		HasChildren: true,
+		Children:    newMessageNodes(id, entityName, 2),
+		Depth:       1,
+	}
+}
+
+// newManualEntityNode builds a queue node, or a subscription node if name is
+// "topic/subscription". Bare topics aren't supported since we can't
+// enumerate their subscriptions without MANAGE.
+func newManualEntityNode(name string) *TreeNode {
+	var node *TreeNode
+	if topic, sub, ok := splitTopicSubscription(name); ok {
+		node = newSubscriptionNode(topic, sub)
+		node.Depth = 0
+		for _, child := range node.Children {
+			child.Depth = 1
+		}
+	} else {
+		node = newQueueNode(name)
+	}
+	// Expand so Active/DLQ show up right away.
+	node.IsExpanded = true
+	return node
+}
+
+func splitTopicSubscription(name string) (topic, sub string, ok bool) {
+	parts := strings.SplitN(name, "/", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	topic = strings.TrimSpace(parts[0])
+	sub = strings.TrimSpace(parts[1])
+	if topic == "" || sub == "" {
+		return "", "", false
+	}
+	return topic, sub, true
 }
 
 const defaultContextTimeout = 30 * time.Second

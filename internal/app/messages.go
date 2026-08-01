@@ -65,6 +65,20 @@ type messageCountMsg struct {
 	Count int64 // -1 if unknown/error
 }
 
+type SessionRequiredMsg struct {
+	EntityName   string // e.g. "topic/subscription" or "queue"
+	IsDeadLetter bool
+}
+
+// PeekFailedMsg carries the entity name so it's still correct even if the
+// user has switched to a different entity by the time this arrives.
+type PeekFailedMsg struct {
+	EntityName   string
+	IsDeadLetter bool
+	Direction    pageDirection
+	Err          error
+}
+
 type ResendRequestedMsg struct {
 	Messages        []azure.MessageInfo
 	Destination     string // topic or queue name
@@ -211,6 +225,10 @@ func (m *MessagesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case messageCountMsg:
 		m.totalMessages = msg.Count
 
+	case PeekFailedMsg:
+		m.isLoading = false
+		m.errMsg = fmt.Sprintf("failed to peek messages: %v", msg.Err)
+
 	case ErrorMsg:
 		m.isLoading = false
 		m.errMsg = string(msg)
@@ -277,6 +295,14 @@ func (m *MessagesModel) LoadMessages(entityName string, isDeadLetter bool, sessi
 		m.loadMessagesCmd(nil, pageInitial),
 		m.fetchMessageCountCmd(),
 	)
+}
+
+func (m *MessagesModel) ResetForSessionPrompt() {
+	m.isLoading = false
+	m.isEmpty = true
+	m.errMsg = ""
+	m.messages = nil
+	m.updateTableRows()
 }
 
 func (m *MessagesModel) SetSize(width, height int) {
@@ -548,7 +574,10 @@ func (m *MessagesModel) loadMessagesCmd(fromSequenceNumber *int64, direction pag
 
 		messages, err := client.PeekMessages(ctx, entityName, isDeadLetter, pageSize, fromSequenceNumber, sessionOpts)
 		if err != nil {
-			return ErrorMsg(fmt.Sprintf("failed to peek messages: %v", err))
+			if sessionOpts.Kind == azure.PeekSessionNone && azure.IsSessionRequiredError(err) {
+				return SessionRequiredMsg{EntityName: entityName, IsDeadLetter: isDeadLetter}
+			}
+			return PeekFailedMsg{EntityName: entityName, IsDeadLetter: isDeadLetter, Direction: direction, Err: err}
 		}
 
 		return MessagesLoadedMsg{
