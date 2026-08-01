@@ -64,6 +64,7 @@ type AuthModel struct {
 	errMsg                  string
 	isAuthenticating        bool
 	namespaces              []azure.NamespaceInfo
+	namespaceFilterInput    textinput.Model
 	selectedNamespaceIdx    int
 	authenticatedUser       string
 	spinner                 spinner.Model
@@ -86,6 +87,10 @@ func NewAuthModel() *AuthModel {
 	saveNameInput.Placeholder = "my-namespace"
 	saveNameInput.Width = 40
 
+	namespaceFilterInput := textinput.New()
+	namespaceFilterInput.Placeholder = "Filter namespaces..."
+	namespaceFilterInput.Width = 80
+
 	// Service Principal text inputs: Tenant ID, Client ID, Client Secret, Namespace (optional)
 	var spInputs [4]textinput.Model
 	for i := range spInputs {
@@ -104,6 +109,7 @@ func NewAuthModel() *AuthModel {
 		selectedAuth:           0,
 		connectionStringInput:  ti,
 		saveNameInput:          saveNameInput,
+		namespaceFilterInput:   namespaceFilterInput,
 		servicePrincipalInputs: spInputs,
 		spinner:                s,
 		width:                  100,
@@ -222,8 +228,15 @@ func (m *AuthModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, spinnerCmd
 			}
 			if m.inNamespaceMode {
+				if m.namespaceFilterInput.Value() != "" {
+					m.namespaceFilterInput.SetValue("")
+					m.selectedNamespaceIdx = 0
+					m.scrollOffset = 0
+					return m, spinnerCmd
+				}
 				m.inNamespaceMode = false
 				m.namespaces = nil
+				m.namespaceFilterInput.Blur()
 				m.errMsg = ""
 				m.scrollOffset = 0
 			}
@@ -254,7 +267,9 @@ func (m *AuthModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectedNamespaceIdx = 0
 		m.scrollOffset = 0
 		m.isAuthenticating = false
-		return m, spinnerCmd
+		m.namespaceFilterInput.SetValue("")
+		m.namespaceFilterInput.Focus()
+		return m, tea.Batch(spinnerCmd, textinput.Blink)
 
 	case ErrorMsg:
 		m.errMsg = string(msg)
@@ -278,20 +293,37 @@ func (m *AuthModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *AuthModel) updateNamespaceSelection(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredNamespaces()
+
 	switch msg.String() {
-	case "up", "k":
+	case "up":
 		if m.selectedNamespaceIdx > 0 {
 			m.selectedNamespaceIdx--
 		}
-	case "down", "j":
-		if m.selectedNamespaceIdx < len(m.namespaces)-1 {
+		return m, m.spinner.Tick
+	case "down":
+		if m.selectedNamespaceIdx < len(filtered)-1 {
 			m.selectedNamespaceIdx++
 		}
+		return m, m.spinner.Tick
 	case "enter":
+		if len(filtered) == 0 {
+			return m, m.spinner.Tick
+		}
 		m.isAuthenticating = true
-		return m, m.connectWithNamespaceCmd(m.namespaces[m.selectedNamespaceIdx].Name)
+		return m, m.connectWithNamespaceCmd(filtered[m.selectedNamespaceIdx].Name)
 	}
-	return m, m.spinner.Tick
+
+	var cmd tea.Cmd
+	m.namespaceFilterInput, cmd = m.namespaceFilterInput.Update(msg)
+
+	filtered = m.filteredNamespaces()
+	if m.selectedNamespaceIdx >= len(filtered) {
+		m.selectedNamespaceIdx = max(len(filtered)-1, 0)
+	}
+	m.scrollOffset = 0
+
+	return m, tea.Batch(cmd, m.spinner.Tick)
 }
 
 func (m *AuthModel) updateAuthSelection(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -561,6 +593,8 @@ func (m *AuthModel) View() string {
 		s.WriteString("\n")
 		if m.inSavedConnectionsMode {
 			s.WriteString(styles.Subtle.Render("↑↓/jk: navigate | enter: connect | x/del: delete | esc: back | ctrl+c: quit"))
+		} else if m.inNamespaceMode {
+			s.WriteString(styles.Subtle.Render("type to filter | ↑↓: navigate | enter: connect | esc: clear/back | ctrl+c: quit"))
 		} else {
 			s.WriteString(styles.Subtle.Render("↑↓/jk: navigate | enter: select | esc: back | ctrl+c: quit"))
 		}
@@ -575,14 +609,53 @@ func (m *AuthModel) View() string {
 	return view
 }
 
+func namespaceDisplayLine(ns azure.NamespaceInfo) string {
+	subID := ns.Subscription
+	if len(subID) > 8 {
+		subID = subID[:8]
+	}
+	return fmt.Sprintf("%s (%s / %s)", ns.Name, subID, ns.ResourceGroup)
+}
+
+func (m *AuthModel) filteredNamespaces() []azure.NamespaceInfo {
+	q := strings.ToLower(strings.TrimSpace(m.namespaceFilterInput.Value()))
+	if q == "" {
+		return m.namespaces
+	}
+	var out []azure.NamespaceInfo
+	for _, ns := range m.namespaces {
+		if strings.Contains(strings.ToLower(namespaceDisplayLine(ns)), q) {
+			out = append(out, ns)
+		}
+	}
+	return out
+}
+
 func (m *AuthModel) viewNamespaceSelection(s *strings.Builder) {
 	s.WriteString(styles.Subtle.Render("Select Namespace"))
 	s.WriteString("\n\n")
 
-	maxLines := m.height
+	inputWidth := max(m.width-4, 10)
+	m.namespaceFilterInput.Width = inputWidth
+	s.WriteString(renderTextInputField(m.namespaceFilterInput.View(), true, inputWidth))
+	s.WriteString("\n\n")
 
-	if m.selectedNamespaceIdx >= len(m.namespaces) {
-		m.selectedNamespaceIdx = len(m.namespaces) - 1
+	filtered := m.filteredNamespaces()
+
+	// The filter box above consumes 4 extra lines (label + blank, box + blank).
+	maxLines := max(m.height-4, 1)
+
+	if len(filtered) == 0 {
+		s.WriteString(styles.Subtle.Render("No namespaces match"))
+		s.WriteString("\n")
+		return
+	}
+
+	if m.selectedNamespaceIdx >= len(filtered) {
+		m.selectedNamespaceIdx = len(filtered) - 1
+	}
+	if m.selectedNamespaceIdx < 0 {
+		m.selectedNamespaceIdx = 0
 	}
 
 	if m.selectedNamespaceIdx < m.scrollOffset {
@@ -591,15 +664,10 @@ func (m *AuthModel) viewNamespaceSelection(s *strings.Builder) {
 		m.scrollOffset = m.selectedNamespaceIdx - maxLines + 1
 	}
 
-	endIdx := min(m.scrollOffset+maxLines, len(m.namespaces))
+	endIdx := min(m.scrollOffset+maxLines, len(filtered))
 
 	for i := m.scrollOffset; i < endIdx; i++ {
-		ns := m.namespaces[i]
-		subID := ns.Subscription
-		if len(subID) > 8 {
-			subID = subID[:8]
-		}
-		display := fmt.Sprintf("%s (%s / %s)", ns.Name, subID, ns.ResourceGroup)
+		display := namespaceDisplayLine(filtered[i])
 
 		var line string
 		if i == m.selectedNamespaceIdx {
